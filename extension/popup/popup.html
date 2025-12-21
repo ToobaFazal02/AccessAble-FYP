@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AccessAble</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>AccessAble</h1>
+        <p class="tagline">Web Accessibility Assistant</p>
+      </header>
+
+      <main>
+        <div class="control-section">
+          <h2>Screen Reader</h2>
+          <button id="toggleReader" class="btn-primary">
+            <span id="readerStatus">Start Reading</span>
+          </button>
+          <button id="pauseResume" class="btn-secondary" style="display: none">
+            <span id="pauseStatus">Pause</span>
+          </button>
+        </div>
+
+        <div class="control-section">
+          <h2>AI Image Descriptions</h2>
+          <button id="toggleImageMode" class="btn-primary">
+            <span id="imageModeStatus">Enable Image Mode</span>
+          </button>
+          <p class="feature-note">
+            Click on any image to hear its AI-generated description
+          </p>
+        </div>
+
+
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <h3>Settings</h3>
+
+          <div class="setting-item">
+            <label for="speed">Speech Speed</label>
+            <input
+              type="range"
+              id="speed"
+              min="0.5"
+              max="2"
+              step="0.1"
+              value="1"
+            />
+            <span id="speedValue">1.0x</span>
+          </div>
+
+          <div class="setting-item">
+            <label for="pitch">Pitch</label>
+            <input
+              type="range"
+              id="pitch"
+              min="0.5"
+              max="2"
+              step="0.1"
+              value="1"
+            />
+            <span id="pitchValue">1.0x</span>
+          </div>
+
+          <div class="setting-item">
+            <label for="volume">Volume</label>
+            <input
+              type="range"
+              id="volume"
+              min="0"
+              max="1"
+              step="0.1"
+              value="1"
+            />
+            <span id="volumeValue">100%</span>
+          </div>
+        </div>
+
+        <div class="shortcuts-section">
+          <h3>Keyboard Shortcuts</h3>
+          <ul class="shortcuts-list">
+            <li><kbd>Alt+R</kbd> Toggle Screen Reader</li>
+            <li><kbd>Alt+S</kbd> Pause/Resume Reading</li>
+            <li><kbd>Alt+N</kbd> Read Next Element</li>
+            <li><kbd>Alt+P</kbd> Read Previous Element</li>
+          </ul>
+          <p class="shortcuts-note">Press these keys anywhere on the page</p>
+        </div>
+      </main>
+
+      <footer>
+        <p class="status-text" id="statusText">Ready</p>
+      </footer>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>
