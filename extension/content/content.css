@@ -1,0 +1,206 @@
+.accessible-highlight {
+  outline: 3px solid #FFA62E !important;
+  outline-offset: 2px !important;
+  background-color: rgba(255, 166, 46, 0.1) !important;
+  border-radius: 4px !important;
+  transition: all 0.3s ease !important;
+}
+
+
+.accessible-image-overlay {
+  outline: 3px solid #B9C7F7 !important;
+  outline-offset: 2px !important;
+  cursor: pointer !important;
+  position: relative !important;
+  transition: all 0.3s ease !important;
+}
+
+.accessible-image-overlay:hover {
+  outline-color: #FFA62E !important;
+  outline-width: 4px !important;
+  transform: scale(1.02) !important;
+}
+
+.accessible-image-badge {
+  position: absolute !important;
+  top: 5px !important;
+  right: 5px !important;
+  background-color: #B9C7F7 !important;
+  color: #4F6B6E !important;
+  padding: 4px 8px !important;
+  border-radius: 4px !important;
+  font-size: 11px !important;
+  font-weight: bold !important;
+  z-index: 999998 !important;
+  pointer-events: none !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+}
+
+.accessible-image-loading {
+  position: absolute !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  background-color: rgba(185, 199, 247, 0.9) !important;
+  color: #4F6B6E !important;
+  padding: 10px 15px !important;
+  border-radius: 8px !important;
+  font-size: 14px !important;
+  z-index: 999999 !important;
+  border: 2px solid #FFA62E !important;
+}
+
+
+#accessible-widget {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background-color: #4F6B6E;
+  color: #FFFFFF;
+  padding: 15px 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 999999;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  min-width: 200px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+#accessible-widget-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+#accessible-widget-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #FFFFFF;
+}
+
+#accessible-widget-close {
+  background: none;
+  border: none;
+  color: #FFFFFF;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.3s;
+}
+
+#accessible-widget-close:hover {
+  background-color: rgba(255, 166, 46, 0.3);
+}
+
+#accessible-widget-status {
+  font-size: 14px;
+  color: #FFA62E;
+  margin-bottom: 12px;
+  font-weight: bold;
+}
+
+#accessible-widget-controls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.accessible-widget-btn {
+  background-color: #B9C7F7;
+  color: #4F6B6E;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: bold;
+  transition: all 0.3s;
+  flex: 1;
+  min-width: 80px;
+}
+
+.accessible-widget-btn:hover {
+  background-color: #FFA62E;
+  color: #FFFFFF;
+  transform: translateY(-2px);
+}
+
+.accessible-widget-btn:active {
+  transform: translateY(0);
+}
+
+.accessible-widget-btn.active {
+  background-color: #FFA62E;
+  color: #FFFFFF;
+}
+
+
+#accessible-widget-shortcuts {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.3);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+#accessible-widget-shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr); 
+  gap: 8px; 
+  margin-top: 8px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.accessible-widget-kbd {
+  background-color: #B9C7F7;
+  color: #4F6B6E;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 10px;
+  font-weight: bold;
+  min-width: 40px;
+  text-align: center;
+  display: inline-block;
+}
+
+.shortcut-label {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+
+img.accessible-ai-highlight {
+  outline: 3px solid #FFA62E !important;
+  outline-offset: 2px !important;
+  cursor: pointer !important;
+  position: relative !important;
+}
+
+img.accessible-ai-highlight::after {
+  content: '🔍 AI';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  background-color: #B9C7F7;
+  color: #4F6B6E;
+  padding: 2px 6px;
+  font-size: 10px;
+  border-radius: 3px;
+  z-index: 10000;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+}
