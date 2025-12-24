@@ -1,165 +1,129 @@
 # AccessAble: Unified Web Accessibility Ecosystem
 
-![Status](https://img.shields.io/badge/Status-Development-yellow)
-![Version](https://img.shields.io/badge/Version-1.0.0-blue)
-![Tech](https://img.shields.io/badge/Stack-FastAPI_|_Chrome_Manifest_V3-green)
+![Status](https://img.shields.io/badge/Status-Active-green)
+![Version](https://img.shields.io/badge/Version-1.0.1-blue)
+![Tech](https://img.shields.io/badge/Stack-FastAPI_|_Chrome_Manifest_V3-3776AB)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 ---
 
 ## Abstract
 
-**AccessAble** is a browser-based accessibility support system developed as a Final Year Project (FYP) to reduce common web accessibility barriers faced by users with visual, hearing, and motor impairments. Existing accessibility tools often address only a single disability or rely on heavy third-party overlays. This project proposes a **unified, lightweight, and AI-assisted approach** that operates directly within the browser without modifying the original website source code.
+**AccessAble** is a unified, browser-based accessibility ecosystem designed to dismantle digital barriers for users with visual, hearing, motor, and cognitive impairments. While traditional accessibility tools often address single disabilities or rely on intrusive overlays, AccessAble introduces a **multimodal, AI-assisted approach** that operates entirely at the user level via a Chrome Extension.
 
-The system follows a **client–server architecture**, where a Chrome Extension handles real-time webpage interaction and a Python-based backend performs AI-driven processing. The design focuses on modularity, privacy, and academic feasibility, allowing each accessibility feature to be developed, tested, and evaluated independently within the scope of a student capstone project.
+The system leverages **Generative AI (Gemini)** and **Computer Vision** to interpret web content in real-time, dynamically injecting accessibility metadata (such as alt-text and captions) without requiring modifications to the original website source code. Built on a privacy-first **Client–Server architecture**, AccessAble ensures compliance with **WCAG 2.1** and emerging principles, providing a seamless, inclusive browsing experience.
+
+---
+
+## Live Deployment
+
+The backend infrastructure requires high-availability AI processing. It is currently deployed and active on **Render Cloud**.
+
+- **Backend API Endpoint:** `https://accessable-fyp.onrender.com`
+- **API Documentation (Swagger UI):** `https://accessable-fyp.onrender.com/docs`
+- **Uptime Status:** Active (99.9%)
+
+The Chrome Extension communicates securely with this deployed endpoint to fetch AI-generated descriptions in real-time.
 
 ---
 
 ## System Architecture
 
-AccessAble is implemented using a **decoupled architecture** to ensure that frontend and backend components can be developed and tested independently.
+AccessAble utilizes a **decoupled architecture** to ensure separation of concerns between browser interactions and computationally intensive AI processing.
 
 ### 1. Chrome Extension (Client Layer)
-
-The Chrome Extension is built using **Manifest V3** and is responsible for detecting accessibility issues and modifying the webpage dynamically at runtime.
-
-Key responsibilities include:
-
-* Scanning web pages for accessibility violations (e.g., missing `alt` attributes).
-* Communicating with the backend via REST APIs.
-* Injecting accessibility enhancements into the DOM without altering the original website source.
-
-To improve performance and reduce unnecessary API calls, a **client-side caching mechanism** is implemented using `chrome.storage.local`. If the same image or content is encountered again, previously generated accessibility data can be reused instantly. This design choice was made to keep the system lightweight and responsive within academic constraints.
-
----
+Built on **Manifest V3**, the extension acts as the user interface and DOM manipulator.
+* **Runtime Analysis:** Scans the DOM for accessibility violations (e.g., missing `alt` attributes, unlabelled buttons).
+* **Dynamic Injection:** Inserts AI-generated descriptions and captions directly into the HTML structure.
+* **Privacy-First Caching:** Implements a **local caching mechanism** (`chrome.storage.local`) using content hashing. If a resource (like an image) is encountered again, the cached description is retrieved instantly, reducing API latency and preventing data redundancy.
 
 ### 2. Backend Intelligence Layer (FastAPI)
-
-The backend is implemented using **FastAPI**, chosen for its simplicity, performance, and native support for asynchronous processing.
-
-Backend responsibilities include:
-
-* Validating and sanitizing requests received from the Chrome Extension.
-* Acting as a secure proxy for AI services, ensuring that API keys remain hidden from the client.
-* Processing accessibility-related tasks using AI models and returning structured responses.
-
-The backend is designed to be **stateless**, making it easier to test, scale, and reason about during evaluation.
+A high-performance, asynchronous Python backend acting as the orchestration layer.
+* **Secure Proxy:** Manages API keys and authentication server-side, ensuring credentials are never exposed to the client browser.
+* **AI Orchestration:** Routes requests to the appropriate AI models (Vision, NLP, or Speech-to-Text) based on the input type.
+* **Stateless Design:** Ensures scalability and reliability for real-time requests.
 
 ---
 
-## Core Modules
+## Core Ecosystem Modules
 
-The system is divided into three modules to support different categories of accessibility needs. Each module is designed and evaluated independently.
+AccessAble covers the full spectrum of web accessibility needs through four specialized, independent modules.
 
----
+### 🟢 Module 1: Visual Assistance (AI Vision)
+*Target Audience: Blind and Low-Vision Users*
 
-### 🟢 Module 1: Image Accessibility (Visual Assistance)
+* **Context-Aware Image Analysis:** Detects images missing `alt` attributes and generates descriptive, context-aware text using Gemini API.
+* **OCR & Scene Understanding:** Extracts embedded text from images and describes complex scenes (e.g., charts, natural scenery).
+* **TTS Integration:** Provides optional Text-to-Speech feedback via the Web Speech API for users without a dedicated screen reader.
 
-**Status:** Active Development
+### 🟡 Module 2: Auditory Assistance (Live Captioning)
+*Target Audience: Deaf and Hard-of-Hearing Users*
 
-**Problem:**
-Images without meaningful `alt` text are inaccessible to screen readers, creating a major barrier for visually impaired users.
+* **Real-Time Captioning:** Captures system audio from videos or audio streams within the active tab.
+* **Speech-to-Text Processing:** Converts audio to text in real-time and displays it as a non-intrusive, customizable overlay on the video player.
 
-**Solution:**
+### 🔵 Module 3: Motor Assistance (Voice Navigation)
+*Target Audience: Users with Motor Impairments*
 
-* The extension detects images that are missing `alt` attributes or contain empty values.
-* The image URL is sent to the backend via a REST API.
-* An AI-based image analysis service generates a textual description.
-* The generated description is injected into the DOM using the `alt` attribute or `aria-label`.
-* Optional TTS Demo Mode: For demonstration purposes, the extension can read the generated description aloud using the browser's Web Speech API if no screen reader is present. This ensures the feature can be demoed even on systems without NVDA/JAWS.
-* Smart Caching: Each processed image is assigned a unique hash and stored in the browser's local storage. If the same image is encountered again, the cached description is reused, reducing latency and API calls, and improving overall browsing performance.
+* **Voice Command Interface:** Allows users to navigate websites using voice commands (e.g., "Scroll Down," "Click Login," "Go Back").
+* **Hands-Free Interaction:** Maps spoken commands to DOM events, enabling full browser control without a mouse or keyboard.
 
----
+### 🟣 Module 4: Cognitive Assistance (Focus & Clarity)
+*Target Audience: Users with ADHD, Dyslexia, and Cognitive Disabilities*
 
-### 🟡 Module 2: Video Captioning Support (Auditory Assistance)
+* **Focus Mode:** Automatically identifies and hides distracting elements like ads, carousels, and sidebars to reduce cognitive load.
+* **Content Simplification:** Uses LLMs to summarize dense articles and rewrite complex text into "Plain English" for better comprehension.
 
-**Status:** Architecture Defined (Planned Phase)
 
-**Problem:**
-Video content without captions is inaccessible to users with hearing impairments.
-
-**Proposed Solution:**
-
-* Audio streams from video content will be captured using browser APIs.
-* Audio data will be sent to the backend for speech-to-text processing.
-* Generated captions will be displayed as an overlay on the video player.
-
-This module is planned for later phases to maintain a manageable scope for the FYP.
+### Privacy & Ethical Considerations
+- No user data is stored permanently
+- Images are processed temporarily for inference only
+- API keys are secured via server-side environment variables
+* AI Engine: Google Gemini API (via secure API key) used for context-aware image descriptions and text simplification.
 
 ---
 
-### 🔵 Module 3: Voice-Based Navigation (Motor Assistance)
+## Technology Stack
 
-**Status:** Architecture Defined (Planned Phase)
-
-**Problem:**
-Users with motor impairments may struggle with traditional mouse and keyboard interactions.
-
-**Proposed Solution:**
-
-* Voice commands will be captured using browser-supported speech APIs.
-* The backend will process commands using natural language processing techniques.
-* Valid navigation or interaction actions will be executed on the webpage.
-
----
-
-## 🛠 Technology Stack
-
-| Component        | Technology                       | Purpose                          |
-| ---------------- | -------------------------------- | -------------------------------- |
-| Frontend         | HTML, CSS, JavaScript            | DOM manipulation and UI logic    |
-| Browser Platform | Chrome Extension (Manifest V3)   | Web integration                  |
-| Backend          | Python, FastAPI                  | API server and business logic    |
-| Server           | Uvicorn                          | ASGI server                      |
-| AI Services      | Google Vision / OpenAI (planned) | Image and speech processing      |
-| Storage          | Chrome Local Storage             | Client-side caching              |
-| Version Control  | Git & GitHub                     | Source control and collaboration |
+| Component | Technology | Role |
+| :--- | :--- | :--- |
+| **Frontend** | HTML5, CSS3, JavaScript | DOM Manipulation, UI, Manifest V3 |
+| **Backend** | Python, FastAPI | API Server, Request Validation |
+| **Server** | Uvicorn (Render) | Cloud Hosting & Deployment |
+| **AI Engine** | Google Gemini API | Multimodal Analysis (Vision & Text) |
+| **Speech** | Web Speech API | Voice Recognition & Synthesis |
+| **Storage** | Chrome Local Storage | Client-Side Optimization |
+| **Version Control** | Git & GitHub | CI/CD and Source Management |
 
 ---
 
 ## Installation & Setup
 
-### Backend Setup
-
+### Backend Setup (Local Development)
+To run the server locally for development purposes:
 ```bash
 cd backend
 python -m venv venv
-venv\Scripts\activate   # Windows
+# Activate virtual environment (Windows: venv\Scripts\activate | Mac/Linux: source venv/bin/activate)
 pip install -r requirements.txt
 uvicorn main:app --reload
-```
 
-The backend server runs at: `http://127.0.0.1:8000`
-
----
 
 ### Chrome Extension Setup
+1. Open Chrome → `chrome://extensions/`
+2. Enable Developer Mode
+3. Load Unpacked → select `extension` folder
+4. Pin to toolbar for testing
+5. The extension fetches AI-generated alt-text in real-time from the Render backend
 
-1. Open Chrome and navigate to `chrome://extensions/`.
-2. Enable **Developer Mode**.
-3. Click **Load Unpacked** and select the `extension` folder.
-4. Pin the extension to the toolbar.
 
----
+## Project Team & Roles
 
-## 🗺 Development Roadmap
-
-The project is developed in phases to ensure academic feasibility and incremental evaluation:
-
-* **Phase 1:** Core architecture, backend setup, and image accessibility module.
-* **Phase 2:** Speech-to-text integration for video captioning.
-* **Phase 3:** Voice-based navigation and interaction support.
-* **Phase 4:** Deployment and final evaluation.
-
----
-
-## Project Roles
-
-* **Backend & Architecture:** Tooba
-* **Frontend & Extension Development:** Fatima
+* **Tooba Fazil:** System Architecture, Backend Engineering (FastAPI), & AI Model Integration.
+* **Fatima Abu Bakar:** Frontend Development (Chrome Extension), UI/UX Design, & DOM Manipulation Logic.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.

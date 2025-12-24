@@ -14,9 +14,9 @@ from google import genai
 import uvicorn
 
 # =====================================================
-# 0. PROFESSIONAL LOGGING SETUP
+# LOGGING SETUP
 # =====================================================
-# Terminal output ko rangeen aur clear bananay k liye
+
 class LogColor:
     HEADER = '\033[95m'
     BLUE = '\033[94m'
@@ -35,12 +35,11 @@ def log_error(message):
     print(f"{LogColor.FAIL}[{datetime.now().strftime('%H:%M:%S')} ERROR]{LogColor.ENDC} {message}")
 
 # =====================================================
-# 1. ENV & PATH CONFIG (BULLETPROOF)
+# 1. ENV & PATH CONFIG 
 # =====================================================
-# Is file (main.py) ka folder dhoondo
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Paths set karo
 ENV_PATH = os.path.join(BASE_DIR, ".env")
 PROMPT_PATH = os.path.join(BASE_DIR, "prompt", "image-alt-text.md")
 
