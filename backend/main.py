@@ -17,6 +17,9 @@ import uvicorn
 # LOGGING SETUP
 # =====================================================
 
+SYSTEM_PROMPT = ""
+PROMPT_PATH = os.path.join(BASE_DIR, "prompt", "image-alt-text.md")
+
 class LogColor:
     HEADER = '\033[95m'
     BLUE = '\033[94m'
@@ -41,7 +44,7 @@ def log_error(message):
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 ENV_PATH = os.path.join(BASE_DIR, ".env")
-PROMPT_PATH = os.path.join(BASE_DIR, "prompt", "image-alt-text.md")
+# PROMPT_PATH = os.path.join(BASE_DIR, "prompt", "image-alt-text.md")
 
 log_info(f"Loading environment from: {ENV_PATH}")
 load_dotenv(ENV_PATH)
@@ -62,6 +65,17 @@ app = FastAPI(
     version="1.0",
     description="Module 1: AI-based Image Alt Text Generation"
 )
+
+@app.on_event("startup")
+async def startup_event():
+    global SYSTEM_PROMPT
+    if os.path.exists(PROMPT_PATH):
+        with open(PROMPT_PATH, "r", encoding="utf-8") as f:
+            SYSTEM_PROMPT = f.read()
+        log_success("System Prompt loaded into memory.")
+    else:
+        log_error("Prompt file missing!")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -152,14 +166,14 @@ async def analyze_image(request: ImageRequest):
         log_error(f"Prompt file missing at: {PROMPT_PATH}")
         raise HTTPException(status_code=500, detail="Prompt configuration missing")
     
-    prompt = open(PROMPT_PATH, "r", encoding="utf-8").read()
+    # prompt = open(PROMPT_PATH, "r", encoding="utf-8").read()
 
     try:
         start_time = time.perf_counter()
 
         response = client.models.generate_content(
             model=MODEL_NAME,
-            contents=[prompt, image]
+            contents=[SYSTEM_PROMPT, image]
         )
 
         end_time = time.perf_counter()
