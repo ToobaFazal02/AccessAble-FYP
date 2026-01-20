@@ -97,6 +97,10 @@ AccessAble covers the full spectrum of web accessibility needs through four spec
 
 ---
 
+## License
+
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
 ## Installation & Setup
 
 ### Backend Setup (Local Development)
@@ -124,6 +128,5 @@ uvicorn main:app --reload
 
 ---
 
-## License
 
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
