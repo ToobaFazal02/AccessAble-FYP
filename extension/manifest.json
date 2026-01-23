@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AccessAble",
   "version": "1.0.0",
-  "description": "Screen reader and accessibility tool for web content",
+  "description": "Screen reader and accessibility tool with AI-powered image analysis",
   "permissions": [
     "activeTab",
     "storage",
@@ -10,7 +10,7 @@
   ],
   "host_permissions": [
     "<all_urls>",
-    "https://accessable-fyp.onrender.com/"
+    "https://accessable-fyp.onrender.com/*"
   ],
   "background": {
     "service_worker": "background/background-wrapper.js"
@@ -18,7 +18,10 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content/content.js"],
+      "js": [
+        "content/content-image-analysis.js",
+        "content/content.js"
+      ],
       "css": ["content/content.css"],
       "run_at": "document_idle"
     }
@@ -33,27 +36,19 @@
   },
   "commands": {
     "toggle-reader": {
-      "suggested_key": {
-        "default": "Alt+R"
-      },
-      "description": "Toggle screen reader on/off"
+      "suggested_key": { "default": "Alt+R" },
+      "description": "Toggle screen reader"
     },
     "pause-resume": {
-      "suggested_key": {
-        "default": "Alt+S"
-      },
-      "description": "Pause or resume reading"
+      "suggested_key": { "default": "Alt+S" },
+      "description": "Pause/resume reading"
     },
     "read-next": {
-      "suggested_key": {
-        "default": "Alt+N"
-      },
+      "suggested_key": { "default": "Alt+N" },
       "description": "Read next element"
     },
     "read-previous": {
-      "suggested_key": {
-        "default": "Alt+P"
-      },
+      "suggested_key": { "default": "Alt+P" },
       "description": "Read previous element"
     }
   },
