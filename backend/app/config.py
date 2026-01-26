@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
-PROMPT_PATH = os.path.join(BASE_DIR, "prompt", "image-alt-text.md")
+PROMPT_PATH = os.path.join(BASE_DIR, "ai_prompts", "image-alt-text.md")
 
 # Load .env
 load_dotenv(ENV_PATH)
