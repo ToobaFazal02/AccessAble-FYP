@@ -104,7 +104,7 @@ backend/
 │       ├── routes.py        # /analyze-image endpoint
 │       ├── image_service.py # Download & validation
 │       └── gemini_client.py # Gemini AI integration logic
-├── prompts/
+├── prompt/
 │   └── image-alt-text.md    # Gemini system prompt
 ├── logs/                    # Daily log files (auto-generated)
 ├── .env                     # Environment variables (not in git)
