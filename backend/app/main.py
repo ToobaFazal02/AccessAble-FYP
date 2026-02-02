@@ -1,76 +1,196 @@
 """
-Main FastAPI App - Just routes and health checks
+AccessAble Backend - FastAPI Main Application (FastAPI 0.115+ Standards)
+Multi-module accessibility API server with lifespan management
 """
-
-from fastapi import FastAPI, Request
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.config import ALLOWED_ORIGINS
 from app.logger import log_info, log_success, log_error
 from app.metrics import METRICS
-from app.cache import cache
-from app.config import MODEL_NAME
 
-# Import Module 1 routes
-from app.module1_image.routes import router as module1_router
+# Import module router
+try:
+    from app.module1_image.image_routes import router as image_router
+    from app.module2_audio.caption_routes import router as caption_router
+except ImportError as e:
+    print(f"CRITICAL IMPORT ERROR: {e}")
+    # This will help debug exactly which file path is wrong
+    raise e
 
 
-# FastAPI app
+# ============================================================================
+# LIFESPAN EVENT MANAGER (FastAPI 0.115+ Best Practice)
+# ============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """
+    Lifespan context manager for startup/shutdown events
+    
+    This replaces the deprecated @app.on_event("startup")/@app.on_event("shutdown")
+    pattern with the modern asynccontextmanager approach.
+    
+    Benefits:
+    - Unified startup/shutdown logic
+    - Proper resource cleanup guaranteed
+    - Better error handling
+    - Compatible with FastAPI 0.95+
+    """
+    # ========== STARTUP ==========
+    log_success("=" * 60)
+    log_success("AccessAble Backend Server Starting")
+    log_success("=" * 60)
+    
+    # Initialize Redis connection 
+    try:
+        from app.cache import init_redis_connection
+        await init_redis_connection()
+        log_info("Redis connection initialized")
+    except ImportError:
+        log_info("Redis connection handled by cache module")
+    except Exception as e:
+        log_error(f"Redis initialization failed: {e}")
+        log_info("Falling back to in-memory cache")
+    
+    # Log module status
+    log_info("Module 1: Image Analysis - Active")
+    log_info("Module 2: Audio Captioning - Active")
+    log_success("=" * 60)
+    log_success("Server ready to accept requests")
+    log_success("=" * 60)
+    
+    # Application runs here (between startup and shutdown)
+    yield
+    
+    # ========== SHUTDOWN ==========
+    log_info("=" * 60)
+    log_info("AccessAble Backend Server Shutting Down")
+    log_info("=" * 60)
+    
+    # Cleanup Redis connection
+    try:
+        from app.cache import close_redis_connection
+        await close_redis_connection()
+        log_info("Redis connection closed")
+    except ImportError:
+        pass
+    except Exception as e:
+        log_error(f"Redis cleanup error: {e}")
+    
+    log_success("Server shutdown complete")
+
+
+# ============================================================================
+# APPLICATION INITIALIZATION
+# ============================================================================
+
 app = FastAPI(
-    title="AccessAble – AI Accessibility Backend",
-    version="1.0.0",
-    description="Module 1: AI-powered Image Alt Text Generation",
+    title="AccessAble API",
+    version="1.1.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan,  # Pass lifespan manager to FastAPI
+    
+    contact={
+        "name": "AccessAble Development Team",
+        "url": "https://github.com/ToobaFazal02/AccessAble-FYP.git"  
+    },
 )
 
-# CORS
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=True
 )
 
-# Health check
-@app.get("/")
-def health_check():
+# Register module routers
+app.include_router(image_router)  # Module 1: Image Analysis
+app.include_router(caption_router)  # Module 2: Audio Captioning
+
+log_info("FastAPI application initialized with 2 modules")
+
+
+# ============================================================================
+# ROOT ENDPOINTS
+# ============================================================================
+
+@app.get(
+    "/",
+    summary="API Health Check",
+    description="Returns API status, available modules, and endpoint documentation",
+    tags=["System"]
+)
+async def root():
+    """
+    Root endpoint - Health check and API information
+    
+    Returns service status, version info, and available endpoints.
+    Use this to verify the API is operational.
+    """
     return {
-        "status": "online",
-        "service": "AccessAble Image Analysis API",
-        "model": MODEL_NAME,
-        "version": "1.0.0",
-        "cache_size": cache.size()
+        "service": "AccessAble API",
+        "status": "operational",
+        "version": "1.1.0",
+        "modules": {
+            "module1": "Image Analysis (AI Vision)",
+            "module2": "Audio Captioning (Caption Extraction)"
+        },
+        "endpoints": {
+            "docs": "/docs",
+            "redoc": "/redoc",
+            "module1": "/api/v1/image/analyze",  # ✅ Updated path
+            "module2": "/api/v1/captions/extract",
+            "module2_health": "/api/v1/captions/health",
+            "metrics": "/metrics"
+        },
+        "standards": {
+            "fastapi_version": "0.115+",
+            "pydantic_version": "V2",
+            "async_pattern": "lifespan + run_in_threadpool"
+        }
     }
 
-# Metrics
-@app.get("/metrics")
-def get_metrics():
+
+@app.get(
+    "/metrics",
+    summary="API Usage Metrics",
+    description="Returns detailed metrics including request counts, cache performance, and average response times",
+    tags=["System"]
+)
+async def get_metrics():
+    """
+    Return API usage metrics
+    
+    Provides insights into:
+    - Total requests processed
+    - Cache hit/miss rates
+    - Average response times
+    - Error counts
+    """
     return {
-        **METRICS,
-        "cache_size": cache.size(),
-        "cache_hit_rate": round(
-            METRICS["cache_hits"] / max(METRICS["total_requests"], 1) * 100, 2
+        "service": "AccessAble API",
+        "metrics": METRICS,
+        "cache_hit_rate": (
+            round(METRICS.get("cache_hits", 0) / max(METRICS.get("total_requests", 1), 1) * 100, 2)
+            if METRICS.get("total_requests", 0) > 0 else 0
         )
     }
 
-# Error handler
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    METRICS["errors"] += 1
-    log_error(f"Unhandled exception: {exc}")
-    return {
-        "error": "Internal server error",
-        "detail": str(exc),
-        "path": str(request.url)
-    }
 
-# Register Module 1 routes
-app.include_router(module1_router)
+# ============================================================================
+# MAIN ENTRY POINT (for local development)
+# ============================================================================
 
-
-# Run locally
 if __name__ == "__main__":
     import uvicorn
-    log_info("Starting AccessAble backend...")
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        log_level="info"
+    )

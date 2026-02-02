@@ -72,7 +72,7 @@ Backend API providing AI-powered image analysis for automatic alt text generatio
 │                         ▼                                   │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │  Google Gemini AI (External API)                   │   │
-│  │  Model: gemini-2.0-flash-exp                       │   │
+│  │  Model: gemini-flash-latest                       │   │
 │  │  Input: Image + System Prompt                      │   │
 │  │  Output: Natural language description              │   │
 │  └─────────────────────────────────────────────────────┘   │
@@ -182,7 +182,7 @@ Server runs at `http://127.0.0.1:8000`
   "confidence": 0.95,
   "response_time_sec": 1.82,
   "source": "AI_Generated",
-  "model": "gemini-2.0-flash-exp",
+  "model": "gemini-flash-latest",
   "cached": false
 }
 ```
