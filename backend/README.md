@@ -1,18 +1,23 @@
 # AccessAble Backend - AI Accessibility API
 
-![Status](https://img.shields.io/badge/Status-Production-green)
+![Status](https://img.shields.io/badge/Status-green)
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
 ![Redis](https://img.shields.io/badge/Redis-7.0-DC382D)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
-**Production-grade AI service for automated web accessibility enhancement.** Powers the AccessAble Chrome Extension.
+**AI service for automated web accessibility enhancement.** Powers the AccessAble Chrome Extension.
 
 ---
 
 ## Overview
 
-Backend API providing AI-powered image analysis for automatic alt text generation. Built with FastAPI, Google Gemini Vision AI, and Redis caching for high-performance accessibility remediation at scale.
+Multi-module backend API providing comprehensive accessibility solutions:
+- **Module 1**: AI-powered image analysis for automatic alt text generation
+- **Module 2**: Audio captioning and transcript extraction
+- **Module 3**: Keyboard accessibility analytics and tracking
+
+Built with FastAPI, Google Gemini Vision AI, and Redis caching for high-performance accessibility remediation at scale.
 
 **Live API:** [https://accessable-fyp.onrender.com](https://accessable-fyp.onrender.com)
 
@@ -20,52 +25,77 @@ Backend API providing AI-powered image analysis for automatic alt text generatio
 
 ## Architecture
 
+### Complete System Architecture (3 Modules)
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     USER'S BROWSER                          │
 │  ┌────────────────────────────────────────────────────┐    │
 │  │  Chrome Extension (Frontend - Manifest V3)         │    │
 │  │  ┌──────────────────────────────────────────────┐  │    │
-│  │  │  1. content-image-analysis.js                │  │    │
-│  │  │     - Scans DOM for <img> tags               │  │    │
-│  │  │     - Detects missing alt=""                 │  │    │
-│  │  │     - Adds red border to highlight           │  │    │
-│  │  │     - Sends batch request to background      │  │    │
+│  │  │  MODULE 1: Image Analysis                    │  │    │
+│  │  │  - Scans DOM for <img> tags                  │  │    │
+│  │  │  - Detects missing alt=""                    │  │    │
+│  │  │  - Sends images to backend                   │  │    │
 │  │  └──────────────────────────────────────────────┘  │    │
-│  │                         ▼                           │    │
 │  │  ┌──────────────────────────────────────────────┐  │    │
-│  │  │  2. background.js                            │  │    │
-│  │  │     - Checks chrome.storage.local cache      │  │    │
-│  │  │     - Batches API requests (max 3 concurrent)│  │    │
-│  │  │     - Calls FastAPI backend                  │  │    │
-│  │  │     - Caches responses locally               │  │    │
+│  │  │  MODULE 2: Audio Captioning                  │  │    │
+│  │  │  - Detects video elements                    │  │    │
+│  │  │  - Requests captions from backend            │  │    │
+│  │  └──────────────────────────────────────────────┘  │    │
+│  │  ┌──────────────────────────────────────────────┐  │    │
+│  │  │  MODULE 3: Keyboard Accessibility            │  │    │
+│  │  │  - Injects skip links                        │  │    │
+│  │  │  - Enhances focus indicators                 │  │    │
+│  │  │  - Fixes keyboard traps                      │  │    │
+│  │  │  - Tracks fixes → sends to backend           │  │    │
 │  │  └──────────────────────────────────────────────┘  │    │
 │  └────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────┘
                             │
-                            │ HTTPS POST /analyze-image
+                            │ HTTPS API Requests
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
 │          FASTAPI BACKEND (Render Cloud)                     │
 │  ┌────────────────────────────────────────────────────┐    │
 │  │  app/main.py - FastAPI App Entry Point            │    │
+│  │                                                    │    │
 │  │  ┌──────────────────────────────────────────────┐  │    │
-│  │  │  Routes: /analyze-image                      │  │    │
+│  │  │  MODULE 1: /api/v1/image/analyze            │  │    │
 │  │  │  1. Validate image URL (Pydantic)            │  │    │
 │  │  │  2. Check Redis cache                        │  │    │
 │  │  │  3. Download image (httpx async)             │  │    │
 │  │  │  4. Send to Gemini AI                        │  │    │
-│  │  │  5. Cache result in Redis                    │  │    │
-│  │  │  6. Return description                       │  │    │
+│  │  │  5. Cache result (7 days)                    │  │    │
+│  │  │  6. Return alt text description              │  │    │
+│  │  └──────────────────────────────────────────────┘  │    │
+│  │                                                    │    │
+│  │  ┌──────────────────────────────────────────────┐  │    │
+│  │  │  MODULE 2: /api/v1/captions/extract          │  │    │
+│  │  │  1. Validate video URL                       │  │    │
+│  │  │  2. Check Redis cache (30 days)              │  │    │
+│  │  │  3. Extract captions (yt-dlp)                │  │    │
+│  │  │  4. Return caption data                      │  │    │
+│  │  └──────────────────────────────────────────────┘  │    │
+│  │                                                    │    │
+│  │  ┌──────────────────────────────────────────────┐  │    │
+│  │  │  MODULE 3: /api/v1/keyboard/*                │  │    │
+│  │  │  /track-fixes:                               │  │    │
+│  │  │  1. Receive fix reports from extension       │  │    │
+│  │  │  2. Store in Redis (30 days)                 │  │    │
+│  │  │  3. Aggregate statistics by domain           │  │    │
+│  │  │  /analytics:                                 │  │    │
+│  │  │  1. Return aggregated fix data               │  │    │
+│  │  │  2. Provide insights for thesis research     │  │    │
 │  │  └──────────────────────────────────────────────┘  │    │
 │  └────────────────────────────────────────────────────┘    │
 │                         │                                   │
 │                         ▼                                   │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │  Redis Cache (Persistent)                          │   │
-│  │  Key: sha256(image_url)                            │   │
-│  │  Value: {description, confidence, latency}         │   │
-│  │  TTL: 7 days                                       │   │
+│  │  Module 1: sha256(image_url) → alt text (7d TTL)   │   │
+│  │  Module 2: sha256(video_url) → captions (30d TTL)  │   │
+│  │  Module 3: keyboard_stats:domain → fixes (30d TTL) │   │
 │  │  Fallback: In-Memory Dict (if Redis unavailable)  │   │
 │  └─────────────────────────────────────────────────────┘   │
 │                         │                                   │
@@ -73,19 +103,10 @@ Backend API providing AI-powered image analysis for automatic alt text generatio
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │  Google Gemini AI (External API)                   │   │
 │  │  Model: gemini-flash-latest                       │   │
-│  │  Input: Image + System Prompt                      │   │
-│  │  Output: Natural language description              │   │
+│  │  Used by: Module 1 (Image Analysis)                │   │
 │  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
-
-**Request Flow:**
-1. Extension sends image URL
-2. Check Cache (Redis in Prod / Memory in Dev)
-3. Download & validate image (async)
-4. Gemini AI generates description
-5. Cache result (7-day TTL)
-6. Return structured JSON response
 
 ---
 
@@ -95,16 +116,27 @@ Backend API providing AI-powered image analysis for automatic alt text generatio
 backend/
 ├── app/
 │   ├── main.py              # FastAPI application entry point
-│   ├── config.py            # Configuration management
+│   ├── config.py            # Configuration management (all modules)
 │   ├── logger.py            # File + console logging
 │   ├── metrics.py           # Request analytics
 │   ├── cache.py             # Redis client with graceful fallback
-│   ├── schemas.py           # Pydantic models
-│   └── module1_image/
-│       ├── routes.py        # /analyze-image endpoint
-│       ├── image_service.py # Download & validation
-│       └── gemini_client.py # Gemini AI integration logic
-├── prompt/
+│   ├── schemas.py           # Shared Pydantic models
+│   │
+│   ├── module1_image/       # IMAGE ANALYSIS MODULE
+│   │   ├── image_routes.py  # /api/v1/image/* endpoints
+│   │   ├── image_service.py # Download & validation
+│   │   └── gemini_client.py # Gemini AI integration
+│   │
+│   ├── module2_audio/       # AUDIO CAPTIONING MODULE
+│   │   ├── caption_routes.py    # /api/v1/captions/* endpoints
+│   │   ├── caption_extractor.py # yt-dlp caption extraction
+│   │   └── caption_schemas.py   # Pydantic models
+│   │
+│   └── module3_keyboard/    # KEYBOARD ACCESSIBILITY MODULE
+│       ├── keyboard_routes.py   # /api/v1/keyboard/* endpoints
+│       └── keyboard_schemas.py  # Pydantic models
+│
+├── prompts/
 │   └── image-alt-text.md    # Gemini system prompt
 ├── logs/                    # Daily log files (auto-generated)
 ├── .env                     # Environment variables (not in git)
@@ -132,7 +164,7 @@ cd backend
 ```bash
 python -m venv venv
 # Windows:
-venv\Scripts\activate
+./venv/Scripts/activate
 # Mac/Linux:
 source venv/bin/activate
 ```
@@ -163,9 +195,9 @@ Server runs at `http://127.0.0.1:8000`
 
 ## API Reference
 
-### Endpoints
+### Module 1: Image Analysis
 
-**`POST /analyze-image`**
+**`POST /api/v1/image/analyze`**
 
 **Request:**
 ```json
@@ -187,9 +219,67 @@ Server runs at `http://127.0.0.1:8000`
 }
 ```
 
-**`GET /metrics`** - Usage statistics
+---
+
+### Module 2: Audio Captioning
+
+**`POST /api/v1/captions/extract`**
+
+**Request:**
+```json
+{
+  "video_url": "https://youtube.com/watch?v=abc123"
+}
+```
+
+**Response:**
+```json
+{
+  "captions": "Full transcript text here...",
+  "language": "en",
+  "cached": false,
+  "source": "YouTube"
+}
+```
+
+**`GET /api/v1/captions/health`** - Health check
+
+---
+
+### Module 3: Keyboard Accessibility
+
+**`POST /api/v1/keyboard/track-fixes`**
+
+**Request:**
+```json
+{
+  "url": "https://reddit.com/r/programming",
+  "domain": "reddit.com",
+  "fixes_applied": ["skip_link", "focus_indicators", "keyboard_shortcuts"]
+}
+```
+
+**Response:**
+```json
+{
+  "status": "recorded",
+  "domain": "reddit.com",
+  "total_visits_this_domain": 42,
+  "message": "Successfully recorded 3 fixes"
+}
+```
+
+**`GET /api/v1/keyboard/analytics`** - Aggregated statistics
+
+**`GET /api/v1/keyboard/health`** - Health check
+
+---
+
+### System Endpoints
 
 **`GET /`** - Health check
+
+**`GET /metrics`** - Usage statistics for all modules
 
 **`GET /docs`** - Interactive Swagger Documentation
 
@@ -198,13 +288,15 @@ Server runs at `http://127.0.0.1:8000`
 ## Configuration
 
 ### Environment variables (`.env`):
-- `GEMINI_API_KEY`: **Required** for AI generation
+- `GEMINI_API_KEY`: **Required** for AI generation (Module 1)
 - `REDIS_URL`: (Optional) Connection string for Redis
 
 ### Constants (`app/config.py`):
-- `MAX_IMAGE_SIZE_BYTES`: 5MB limit
-- `CACHE_TTL_SECONDS`: 7 days
-- `MAX_CONCURRENT_AI_CALLS`: 5 parallel requests (Semaphore)
+- `MAX_IMAGE_SIZE_BYTES`: 5MB limit (Module 1)
+- `CACHE_TTL_SECONDS`: 7 days (Module 1)
+- `CACHE_TTL_CAPTIONS`: 30 days (Module 2)
+- `CACHE_TTL_KEYBOARD`: 30 days (Module 3)
+- `MAX_CONCURRENT_AI_CALLS`: 5 parallel requests (Module 1)
 
 ---
 
@@ -215,9 +307,12 @@ Server runs at `http://127.0.0.1:8000`
 **File Output:** `logs/accessable_2026-01-xx.log`
 
 ```
-[2026-01-26 14:23:45] [INFO] Downloading image from: https://example.com/photo.jpg
+[2026-01-26 14:23:45] [INFO] Module 1: Image Analysis - Active
+[2026-01-26 14:23:45] [INFO] Module 2: Audio Captioning - Active
+[2026-01-26 14:23:45] [INFO] Module 3: Keyboard Accessibility - Active
 [2026-01-26 14:23:46] [SUCCESS] Image downloaded: 800x600px, 145.2KB
 [2026-01-26 14:23:48] [SUCCESS] AI response received in 1.85s
+[2026-01-26 14:24:01] [SUCCESS] Tracked fixes for reddit.com: skip_link, focus_indicators
 ```
 
 ---
@@ -238,12 +333,13 @@ uvicorn app.main:app --host 0.0.0.0 --port $PORT
 
 ---
 
-## Future Roadmap
+## Module Status
 
-- [ ] Rate limiting (slowapi)
-- [ ] Module 2: Audio captioning
-- [ ] Module 3: Voice navigation
-- [ ] PostgreSQL analytics
+- [x] **Module 1**: Image Analysis (AI Vision) 
+- [x] **Module 2**: Audio Captioning (Caption Extraction) 
+- [x] **Module 3**: Keyboard Accessibility (Navigation Fixes) 
+- [ ] **Future**: Rate limiting (slowapi)
+- [ ] **Future**: PostgreSQL analytics
 
 ---
 

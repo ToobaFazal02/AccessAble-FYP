@@ -1,6 +1,6 @@
 """
 Configuration - All constants and environment variables
-(Module 1 & Module 2 Compatible)
+(Module 1, Module 2, and Module 3 Compatible)
 """
 
 import os
@@ -39,10 +39,11 @@ DOWNLOAD_TIMEOUT_SEC = 10
 
 
 # ============================================================================
-# CACHE SETTINGS (Module 1 & Module 2)
+# CACHE SETTINGS (Module 1, Module 2, Module 3)
 # ============================================================================
 CACHE_TTL_SECONDS = 604800  # 7 days (default for Module 1)
 CACHE_TTL_CAPTIONS = 2592000  # 30 days (for Module 2)
+CACHE_TTL_KEYBOARD = 2592000  # 30 days (for Module 3 keyboard statistics)
 USE_REDIS = True  # Set False to force in-memory fallback
 
 
@@ -51,6 +52,13 @@ USE_REDIS = True  # Set False to force in-memory fallback
 # ============================================================================
 YTDLP_TIMEOUT_SEC = 30  # Timeout for yt-dlp subprocess
 MAX_CONCURRENT_CAPTION_REQUESTS = 5  # Rate limiting (future)
+
+
+# ============================================================================
+# KEYBOARD ACCESSIBILITY SETTINGS (Module 3)
+# ============================================================================
+# TTL already defined above as CACHE_TTL_KEYBOARD
+# Additional Module 3 settings can be added here as needed
 
 
 # ============================================================================
@@ -68,10 +76,10 @@ ALLOWED_ORIGINS = [
 # VALIDATION
 # ============================================================================
 if not GEMINI_API_KEY:
-    raise RuntimeError("❌ GEMINI_API_KEY missing in .env file")
+    raise RuntimeError("GEMINI_API_KEY missing in .env file")
 
 if not os.path.exists(PROMPT_PATH):
-    raise FileNotFoundError(f"❌ Prompt file missing: {PROMPT_PATH}")
+    raise FileNotFoundError(f"Prompt file missing: {PROMPT_PATH}")
 
 
 # ============================================================================
@@ -86,4 +94,5 @@ def get_config_info() -> dict:
         "max_image_size_mb": MAX_IMAGE_SIZE_BYTES / 1_000_000,
         "cache_ttl_images_days": CACHE_TTL_SECONDS / 86400,
         "cache_ttl_captions_days": CACHE_TTL_CAPTIONS / 86400,
+        "cache_ttl_keyboard_days": CACHE_TTL_KEYBOARD / 86400,
     }

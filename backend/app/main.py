@@ -10,13 +10,13 @@ from app.config import ALLOWED_ORIGINS
 from app.logger import log_info, log_success, log_error
 from app.metrics import METRICS
 
-# Import module router
+# Import module routers
 try:
     from app.module1_image.image_routes import router as image_router
     from app.module2_audio.caption_routes import router as caption_router
+    from app.module3_keyboard.keyboard_routes import router as keyboard_router
 except ImportError as e:
     print(f"CRITICAL IMPORT ERROR: {e}")
-    # This will help debug exactly which file path is wrong
     raise e
 
 
@@ -57,6 +57,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Log module status
     log_info("Module 1: Image Analysis - Active")
     log_info("Module 2: Audio Captioning - Active")
+    log_info("Module 3: Keyboard Accessibility - Active")
     log_success("=" * 60)
     log_success("Server ready to accept requests")
     log_success("=" * 60)
@@ -88,10 +89,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 app = FastAPI(
     title="AccessAble API",
-    version="1.1.0",
+    version="1.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    lifespan=lifespan,  # Pass lifespan manager to FastAPI
+    lifespan=lifespan,
     
     contact={
         "name": "AccessAble Development Team",
@@ -109,10 +110,11 @@ app.add_middleware(
 )
 
 # Register module routers
-app.include_router(image_router)  # Module 1: Image Analysis
-app.include_router(caption_router)  # Module 2: Audio Captioning
+app.include_router(image_router)       # Module 1: Image Analysis
+app.include_router(caption_router)     # Module 2: Audio Captioning
+app.include_router(keyboard_router)    # Module 3: Keyboard Accessibility
 
-log_info("FastAPI application initialized with 2 modules")
+log_info("FastAPI application initialized with 3 modules")
 
 
 # ============================================================================
@@ -135,17 +137,21 @@ async def root():
     return {
         "service": "AccessAble API",
         "status": "operational",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "modules": {
             "module1": "Image Analysis (AI Vision)",
-            "module2": "Audio Captioning (Caption Extraction)"
+            "module2": "Audio Captioning (Caption Extraction)",
+            "module3": "Keyboard Accessibility (Navigation Fixes)"
         },
         "endpoints": {
             "docs": "/docs",
             "redoc": "/redoc",
-            "module1": "/api/v1/image/analyze",  # ✅ Updated path
+            "module1": "/api/v1/image/analyze",
             "module2": "/api/v1/captions/extract",
             "module2_health": "/api/v1/captions/health",
+            "module3_track": "/api/v1/keyboard/track-fixes",
+            "module3_analytics": "/api/v1/keyboard/analytics",
+            "module3_health": "/api/v1/keyboard/health",
             "metrics": "/metrics"
         },
         "standards": {
