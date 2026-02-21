@@ -1,21 +1,71 @@
-# AccessAble: Unified Web Accessibility Ecosystem
+# AccessAble FYP
+
 
 ![Status](https://img.shields.io/badge/Status-Active-green)
 ![Version](https://img.shields.io/badge/Version-1.1.0-blue)
 ![Tech](https://img.shields.io/badge/Stack-FastAPI_|_Chrome_Manifest_V3-3776AB)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
+=======
+AccessAble is a Manifest V3 Chrome extension + FastAPI backend that improves web accessibility in real time.  
+The extension detects accessibility gaps on visited pages and applies assistive behaviors with AI-backed services for image descriptions and caption checks.
+>>>>>>> 4a06c43 (Updated popup UI/UX with modern design and fixed background scripts)
 
----
+## Current Scope
 
-## Abstract
+- Screen reader flow in content script (read, pause, next, previous)
+- AI alt-text generation for missing image descriptions
+- Video caption candidate scanning and caption metadata checks
+- Keyboard/focus accessibility fixes with telemetry tracking
+- Shared action contracts between popup, content scripts, and service worker
+
 
 **AccessAble** is a browser-based accessibility ecosystem designed to reduce digital barriers for users with visual, hearing, motor, and cognitive impairments. Instead of relying on intrusive overlays or requiring site owners to modify source code, AccessAble uses a **Chrome Extension + API architecture** to improve accessibility at the user layer.
 
 The platform currently delivers production-ready support for image accessibility (Module 1), with architectural groundwork for keyboard enhancements (Module 3) and an actively redesigned Module 2 for robust caption accessibility.
+=======
+## Repository Structure
 
----
+```text
+backend/
+  app/
+    main.py
+    module1_image/
+      image_routes.py
+      image_service.py
+      gemini_client.py
+    module2_audio/
+      caption_routes.py
+      caption_extractor.py
+      caption_schemas.py
+    module3_keyboard/
+      keyboard_routes.py
+      keyboard_schemas.py
+    cache.py
+    metrics.py
+    config.py
+extension/
+  manifest.json
+  shared/
+    contracts.js
+  background/
+    background-wrapper.js
+  content/
+    content.js
+    content.css
+    modules/
+      module1-image.js
+      module2-captions.js
+      module3-keyboard.js
+  popup/
+    popup.html
+    popup.css
+    popup.js
+```
+>>>>>>> 4a06c43 (Updated popup UI/UX with modern design and fixed background scripts)
 
-## Live Deployment
+## Frontend Architecture (Chrome Extension)
+
+### 1. Manifest V3 Boot
 
 The backend is deployed on Render Cloud:
 
@@ -23,10 +73,21 @@ The backend is deployed on Render Cloud:
 - **API Documentation (Swagger UI):** `https://accessable-fyp.onrender.com/docs`
 
 > Note: Module 2 is being migrated from a server-first transcript extraction design to a client-first hybrid design to avoid cloud-origin transcript blocking and improve user-facing reliability.
+=======
+File: `extension/manifest.json`
 
----
+- Registers `background/background-wrapper.js` as service worker
+- Injects shared contracts + all content modules at `document_idle`
+- Loads popup UI from `popup/popup.html`
+- Declares keyboard commands (`Alt+R`, `Alt+S`, `Alt+N`, `Alt+P`)
 
-## System Architecture
+### 2. Shared Contracts Layer
+>>>>>>> 4a06c43 (Updated popup UI/UX with modern design and fixed background scripts)
+
+File: `extension/shared/contracts.js`
+
+This file is the single source of truth for:
+
 
 AccessAble uses a decoupled architecture with clear separation of concerns.
 
@@ -44,9 +105,21 @@ Backend orchestration and optional AI processing:
 - Module 2 caption metadata extraction endpoint (`/api/v1/captions/extract`) in current implementation
 - Module 3 keyboard tracking/analytics endpoints
 - Cache/metrics and operational observability
+=======
+- `ACTIONS`: all message action strings
+- `ENDPOINTS`: backend API routes
+- `STORAGE_KEYS`: sync/local storage keys
+- `DEFAULT_SETTINGS` and `DEFAULT_STATE`
+- URL helpers (`normalizeUrl`, `getDomain`, `toAbsoluteUrl`)
 
----
+All extension surfaces use this contract to avoid string drift and request mismatch.
 
+### 3. Popup Layer
+>>>>>>> 4a06c43 (Updated popup UI/UX with modern design and fixed background scripts)
+
+Files: `extension/popup/popup.html`, `extension/popup/popup.css`, `extension/popup/popup.js`
+
+<<<<<<< HEAD
 ## Current Code Status (As Implemented)
 
 ### ✅ Module 1: Visual Assistance (Implemented)
@@ -289,12 +362,91 @@ Deliverables:
 - Minimal, well-documented API contracts for backend assist
 - Tests for parser/engine selection logic and key edge cases
 - Short architecture notes describing data flow and fallback behavior
+=======
+- Tabbed UI with 3 tabs:
+  - `Modules`
+  - `Settings`
+  - `Shortcuts`
+- Keeps stable control IDs used by runtime logic:
+  - `toggleReader`, `pauseResume`
+  - `toggleImageMode`
+  - `toggleKeyboardMode`
+  - `toggleCaptionsMode`, `scanCaptionsNow`
+  - `speed`, `pitch`, `volume`
+- Sends commands to content/background using action contracts
+- Stores user state in `chrome.storage.sync`
+
+### 4. Content Runtime
+
+Main orchestrator: `extension/content/content.js`
+
+Feature modules:
+
+- `module1-image.js`
+  - Finds visible images with missing `alt`
+  - Requests batch analysis via background
+  - Injects generated alt text and highlight markers
+- `module2-captions.js`
+  - Finds supported video candidates (`video` and known iframe hosts)
+  - Optional candidate highlighting
+- `module3-keyboard.js`
+  - Injects skip link
+  - Focus indicator boost
+  - Landmark improvements
+  - Focus trap escape assistance
+
+### 5. Background Service Worker
+
+File: `extension/background/background-wrapper.js`
+
+Responsibilities:
+
+- Central message router
+- Request queue + retry/backoff policy
+- Cache handling (image, captions, negative cache, telemetry dedupe)
+- Backend communication
+- Command forwarding for keyboard shortcuts
+
+## Message Passing Pattern
+
+All messages use a contract action and return a normalized envelope:
+
+```js
+{
+  ok: true | false,
+  data: { ... },   // when ok === true
+  error: { message, statusCode? } | null
+}
+
 ```
 
----
+Main action groups:
 
-## Technology Stack
+- Core
+  - `core.ping`
+  - `core.checkBackend`
+- Image
+  - `image.analyzeBatch`
+  - `image.analyzeSingle`
+- Captions
+  - `captions.extract`
+- Keyboard telemetry
+  - `keyboard.trackFixes`
+  - `keyboard.getAnalytics`
+- Content controls
+  - `content.toggleReader`
+  - `content.pauseReader`
+  - `content.readNext`
+  - `content.readPrevious`
+  - `content.updateSetting`
+  - `content.toggleImageModule`
+  - `content.scanImagesNow`
+  - `content.toggleKeyboardModule`
+  - `content.getKeyboardStatus`
+  - `content.toggleCaptionsModule`
+  - `content.scanVideoCandidates`
 
+<<<<<<< HEAD
 | Component | Technology | Role |
 | :--- | :--- | :--- |
 | **Frontend** | JavaScript, HTML5, CSS3 | Manifest V3 extension, overlay UI, DOM logic |
@@ -302,9 +454,13 @@ Deliverables:
 | **Cache** | Chrome Storage + Redis | Local user cache + backend cache |
 | **Speech/AI** | Web APIs + Gemini (Module 1) | Accessibility assistance and AI enhancement |
 | **Deployment** | Render + Uvicorn | Backend hosting |
+=======
+## Backend Architecture (FastAPI)
+>>>>>>> 4a06c43 (Updated popup UI/UX with modern design and fixed background scripts)
 
----
+Main app: `backend/app/main.py`
 
+<<<<<<< HEAD
 ## Installation (Development)
 
 ### Backend
@@ -329,3 +485,63 @@ uvicorn app.main:app --reload
 ## License
 
 This project is licensed under the **MIT License**. See [LICENSE](LICENSE).
+=======
+Registered routers:
+
+- Module 1 (Image): `backend/app/module1_image/image_routes.py`
+  - `POST /api/v1/image/analyze`
+- Module 2 (Captions): `backend/app/module2_audio/caption_routes.py`
+  - `POST /api/v1/captions/extract`
+  - `GET /api/v1/captions/health`
+- Module 3 (Keyboard): `backend/app/module3_keyboard/keyboard_routes.py`
+  - `POST /api/v1/keyboard/track-fixes`
+  - `GET /api/v1/keyboard/analytics`
+  - `GET /api/v1/keyboard/health`
+
+System endpoints:
+
+- `GET /` health and module listing
+- `GET /metrics` service metrics
+
+## Extension <-> Backend Integration
+
+1. Popup or content sends action to background service worker.
+2. Background validates payload, applies queue/retry/cache policy.
+3. Background calls FastAPI endpoint from contract `ENDPOINTS`.
+4. Response is normalized and sent back to popup/content.
+5. Content updates DOM (alt text, markers, reader state, keyboard fixes).
+
+## Local Development
+
+### Backend
+
+```bash
+cd backend
+python -m venv venv
+# Windows
+venv\Scripts\activate
+# macOS/Linux
+# source venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+### Extension
+
+1. Open `chrome://extensions/`
+2. Enable Developer Mode
+3. Click Load unpacked
+4. Select the `extension/` folder
+5. Pin AccessAble and open the popup
+
+## Notes for Contributors
+
+- Add new actions only in `extension/shared/contracts.js` first.
+- Keep popup control IDs stable to avoid breaking existing runtime handlers.
+- Prefer routing network calls through background service worker, not popup/content directly.
+- Keep response envelope shape consistent (`ok`, `data`, `error`) across modules.
+
+## License
+
+MIT License. See `LICENSE`.
+>>>>>>> 4a06c43 (Updated popup UI/UX with modern design and fixed background scripts)

@@ -19,7 +19,10 @@
     {
       "matches": ["<all_urls>"],
       "js": [
-        "content/content-image-analysis.js",
+        "shared/contracts.js",
+        "content/modules/module1-image.js",
+        "content/modules/module2-captions.js",
+        "content/modules/module3-keyboard.js",
         "content/content.js"
       ],
       "css": ["content/content.css"],

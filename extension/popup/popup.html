@@ -8,95 +8,138 @@
   </head>
   <body>
     <div class="container">
-      <header>
-        <h1>AccessAble</h1>
-        <p class="tagline">Web Accessibility Assistant</p>
+      <header class="popup-header">
+        <div class="header-row">
+          <h1>AccessAble</h1>
+          <div class="backend-indicator" aria-label="Backend connected">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span class="indicator-text">Backend Connected</span>
+          </div>
+        </div>
+        <p class="tagline">Intelligent accessibility controls for every page</p>
       </header>
 
-      <main>
-        <div class="control-section">
-          <h2>Screen Reader</h2>
-          <button id="toggleReader" class="btn-primary">
-            <span id="readerStatus">Start Reading</span>
+      <section class="stats-grid" aria-label="Accessibility metrics">
+        <article class="stat-card">
+          <p class="stat-value">0</p>
+          <p class="stat-label">Images Fixed</p>
+        </article>
+        <article class="stat-card">
+          <p class="stat-value">0</p>
+          <p class="stat-label">Elements Adjusted</p>
+        </article>
+      </section>
+
+      <main class="popup-main" aria-label="Module controls">
+        <section class="module-card">
+          <button id="toggleReader" class="btn-primary toggle-control" type="button">
+            <span class="module-copy">
+              <span class="module-title">Screen Reader</span>
+              <span id="readerStatus" class="module-status">Start Reading</span>
+            </span>
+            <span class="toggle-switch" aria-hidden="true">
+              <span class="toggle-knob"></span>
+            </span>
           </button>
-          <button id="pauseResume" class="btn-secondary" style="display: none">
+          <button id="pauseResume" class="btn-secondary inline-action" style="display: none">
             <span id="pauseStatus">Pause</span>
           </button>
-        </div>
+        </section>
 
-        <div class="control-section">
-          <h2>AI Image Descriptions</h2>
-          <button id="toggleImageMode" class="btn-primary">
-            <span id="imageModeStatus">Enable Image Mode</span>
+        <section class="module-card">
+          <button id="toggleImageMode" class="btn-primary toggle-control" type="button">
+            <span class="module-copy">
+              <span class="module-title">AI Image Descriptions</span>
+              <span id="imageModeStatus" class="module-status">Enable Image Mode</span>
+            </span>
+            <span class="toggle-switch" aria-hidden="true">
+              <span class="toggle-knob"></span>
+            </span>
           </button>
-          <p class="feature-note">
-            Click on any image to hear its AI-generated description
-          </p>
-        </div>
+        </section>
 
+        <section class="module-card">
+          <button id="toggleKeyboardMode" class="btn-primary toggle-control" type="button">
+            <span class="module-copy">
+              <span class="module-title">Keyboard Assist</span>
+              <span id="keyboardModeStatus" class="module-status">Enable Keyboard Assist</span>
+            </span>
+            <span class="toggle-switch" aria-hidden="true">
+              <span class="toggle-knob"></span>
+            </span>
+          </button>
+        </section>
 
-          </div>
-        </div>
+        <section class="module-card">
+          <button id="toggleCaptionsMode" class="btn-primary toggle-control" type="button">
+            <span class="module-copy">
+              <span class="module-title">Video Captions</span>
+              <span id="captionsModeStatus" class="module-status">Highlight Video Targets</span>
+            </span>
+            <span class="toggle-switch" aria-hidden="true">
+              <span class="toggle-knob"></span>
+            </span>
+          </button>
+        </section>
+      </main>
 
-        <div class="settings-section">
-          <h3>Settings</h3>
+      <input
+        type="checkbox"
+        id="settingsDrawerToggle"
+        class="settings-drawer-toggle"
+        hidden
+      />
+      <section class="settings-section" id="settingsPanel">
+        <h2>Speech Settings</h2>
 
-          <div class="setting-item">
-            <label for="speed">Speech Speed</label>
-            <input
-              type="range"
-              id="speed"
-              min="0.5"
-              max="2"
-              step="0.1"
-              value="1"
-            />
+        <div class="setting-item">
+          <label for="speed">Speech Speed</label>
+          <div class="setting-control">
+            <input type="range" id="speed" min="0.5" max="2" step="0.1" value="1" />
             <span id="speedValue">1.0x</span>
           </div>
+        </div>
 
-          <div class="setting-item">
-            <label for="pitch">Pitch</label>
-            <input
-              type="range"
-              id="pitch"
-              min="0.5"
-              max="2"
-              step="0.1"
-              value="1"
-            />
+        <div class="setting-item">
+          <label for="pitch">Pitch</label>
+          <div class="setting-control">
+            <input type="range" id="pitch" min="0.5" max="2" step="0.1" value="1" />
             <span id="pitchValue">1.0x</span>
           </div>
+        </div>
 
-          <div class="setting-item">
-            <label for="volume">Volume</label>
-            <input
-              type="range"
-              id="volume"
-              min="0"
-              max="1"
-              step="0.1"
-              value="1"
-            />
+        <div class="setting-item">
+          <label for="volume">Volume</label>
+          <div class="setting-control">
+            <input type="range" id="volume" min="0" max="1" step="0.1" value="1" />
             <span id="volumeValue">100%</span>
           </div>
         </div>
+      </section>
 
-        <div class="shortcuts-section">
-          <h3>Keyboard Shortcuts</h3>
-          <ul class="shortcuts-list">
-            <li><kbd>Alt+R</kbd> Toggle Screen Reader</li>
-            <li><kbd>Alt+S</kbd> Pause/Resume Reading</li>
-            <li><kbd>Alt+N</kbd> Read Next Element</li>
-            <li><kbd>Alt+P</kbd> Read Previous Element</li>
-          </ul>
-          <p class="shortcuts-note">Press these keys anywhere on the page</p>
+      <section class="shortcuts-section">
+        <h2>Shortcuts</h2>
+        <ul class="shortcuts-list">
+          <li><kbd>Alt+R</kbd> Toggle reader</li>
+          <li><kbd>Alt+S</kbd> Pause or resume</li>
+          <li><kbd>Alt+N</kbd> Read next element</li>
+          <li><kbd>Alt+P</kbd> Read previous element</li>
+        </ul>
+      </section>
+
+      <footer class="action-footer">
+        <div class="action-bar">
+          <button id="scanCaptionsNow" class="btn-secondary action-button" type="button">
+            <span id="captionsScanStatus">Refresh</span>
+          </button>
+          <label for="settingsDrawerToggle" class="btn-secondary action-button settings-button">
+            Settings
+          </label>
         </div>
-      </main>
-
-      <footer>
         <p class="status-text" id="statusText">Ready</p>
       </footer>
     </div>
+    <script src="../shared/contracts.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>
