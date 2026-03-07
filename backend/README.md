@@ -14,7 +14,7 @@
 
 Multi-module backend API providing comprehensive accessibility solutions:
 - **Module 1**: AI-powered image analysis for automatic alt text generation
-- **Module 2**: Audio captioning and transcript extraction
+- **Module 2**: Caption services in transition (legacy extraction + upcoming assist APIs)
 - **Module 3**: Keyboard accessibility analytics and tracking
 
 Built with FastAPI, Google Gemini Vision AI, and Redis caching for high-performance accessibility remediation at scale.
@@ -40,8 +40,8 @@ Built with FastAPI, Google Gemini Vision AI, and Redis caching for high-performa
 │  │  └──────────────────────────────────────────────┘  │    │
 │  │  ┌──────────────────────────────────────────────┐  │    │
 │  │  │  MODULE 2: Audio Captioning                  │  │    │
-│  │  │  - Detects video elements                    │  │    │
-│  │  │  - Requests captions from backend            │  │    │
+│  │  │  - Primary caption flow moving to extension  │  │    │
+│  │  │  - Backend used for optional assist services │  │    │
 │  │  └──────────────────────────────────────────────┘  │    │
 │  │  ┌──────────────────────────────────────────────┐  │    │
 │  │  │  MODULE 3: Keyboard Accessibility            │  │    │
@@ -143,6 +143,19 @@ backend/
 ├── .env.example             # Template for environment variables
 └── requirements.txt
 ```
+
+---
+
+
+## Module 2 Transition Status (Important)
+
+Module 2 is intentionally moving from a backend-first extraction model to a **client-first + hybrid backend assist** model:
+
+- **Core caption retrieval/rendering** should execute in the Chrome extension (user context).
+- **Backend role** is being narrowed to optional assist APIs (simplify/translate/summarize), caching, and operational telemetry (opt-in).
+- Legacy endpoint `POST /api/v1/captions/extract` remains available during migration but should not be treated as the long-term primary path for YouTube captions.
+
+If users see “captions unavailable”, validate adapter fallback, track availability, and frontend lifecycle behavior before labeling backend as failed.
 
 ---
 
