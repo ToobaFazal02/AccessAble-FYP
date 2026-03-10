@@ -1,31 +1,40 @@
 # AccessAble Backend - AI Accessibility API
 
-![Status](https://img.shields.io/badge/Status-green)
-![Python](https://img.shields.io/badge/Python-3.11+-3776AB)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
-![Redis](https://img.shields.io/badge/Redis-7.0-DC382D)
-![License](https://img.shields.io/badge/License-MIT-blue)
+AccessAble backend is a FastAPI service that supports the AccessAble Chrome extension with AI and metadata endpoints.
 
-**AI service for automated web accessibility enhancement.** Powers the AccessAble Chrome Extension.
+## Current Status 
 
----
+- Module 1: Image analysis endpoint is active.
+- Module 2: Caption extraction endpoint is active and used in hybrid mode.
+- Module 3: Keyboard analytics endpoints are active.
 
-## Overview
+
 
 Multi-module backend API providing comprehensive accessibility solutions:
 - **Module 1**: AI-powered image analysis for automatic alt text generation
 - **Module 2**: Caption services in transition (legacy extraction + upcoming assist APIs)
 - **Module 3**: Keyboard accessibility analytics and tracking
+=======
+>>>>>>> b8c4187 (feat(module2): implement phase-1 client-first captions architecture with adapters, engine, renderer, state, and tests)
 
-Built with FastAPI, Google Gemini Vision AI, and Redis caching for high-performance accessibility remediation at scale.
+## Architecture Alignment (Client-First + Hybrid Backend)
 
-**Live API:** [https://accessable-fyp.onrender.com](https://accessable-fyp.onrender.com)
+The project architecture is intentionally split:
 
----
+- Extension-first runtime:
+  - Detects media on page
+  - Normalizes and syncs caption cues
+  - Renders accessible overlay
+  - Handles settings, cache, and SPA lifecycle
+- Backend support runtime:
+  - Provides stable API endpoints
+  - Performs caption metadata extraction for supported video URLs
+  - Handles image AI generation and keyboard analytics
 
-## Architecture
+For Module 2 Phase 1, backend API contracts remain unchanged to avoid breaking extension integrations.
 
-### Complete System Architecture (3 Modules)
+## API Surface (No Breaking Changes in Phase 1)
+
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -107,44 +116,93 @@ Built with FastAPI, Google Gemini Vision AI, and Redis caching for high-performa
 │  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
+=======
+### Module 1
+>>>>>>> b8c4187 (feat(module2): implement phase-1 client-first captions architecture with adapters, engine, renderer, state, and tests)
 
----
+- `POST /api/v1/image/analyze`
+
+### Module 2
+
+- `POST /api/v1/captions/extract`
+- `GET /api/v1/captions/health`
+
+Expected response fields consumed by extension include:
+- `video_url`
+- `has_captions`
+- `caption_tracks`
+- `video_title`
+- `video_duration`
+- `platform`
+- `source`
+- `cached`
+- `response_time_sec`
+
+### Module 3
+
+- `POST /api/v1/keyboard/track-fixes`
+- `GET /api/v1/keyboard/analytics`
+- `GET /api/v1/keyboard/health`
+
+### System
+
+- `GET /`
+- `GET /metrics`
+- `GET /docs`
 
 ## Project Structure
 
-```
+```text
 backend/
-├── app/
-│   ├── main.py              # FastAPI application entry point
-│   ├── config.py            # Configuration management (all modules)
-│   ├── logger.py            # File + console logging
-│   ├── metrics.py           # Request analytics
-│   ├── cache.py             # Redis client with graceful fallback
-│   ├── schemas.py           # Shared Pydantic models
-│   │
-│   ├── module1_image/       # IMAGE ANALYSIS MODULE
-│   │   ├── image_routes.py  # /api/v1/image/* endpoints
-│   │   ├── image_service.py # Download & validation
-│   │   └── gemini_client.py # Gemini AI integration
-│   │
-│   ├── module2_audio/       # AUDIO CAPTIONING MODULE
-│   │   ├── caption_routes.py    # /api/v1/captions/* endpoints
-│   │   ├── caption_extractor.py # yt-dlp caption extraction
-│   │   └── caption_schemas.py   # Pydantic models
-│   │
-│   └── module3_keyboard/    # KEYBOARD ACCESSIBILITY MODULE
-│       ├── keyboard_routes.py   # /api/v1/keyboard/* endpoints
-│       └── keyboard_schemas.py  # Pydantic models
-│
-├── prompts/
-│   └── image-alt-text.md    # Gemini system prompt
-├── logs/                    # Daily log files (auto-generated)
-├── .env                     # Environment variables (not in git)
-├── .env.example             # Template for environment variables
-└── requirements.txt
+  app/
+    main.py
+    config.py
+    cache.py
+    metrics.py
+    module1_image/
+      image_routes.py
+      image_service.py
+      gemini_client.py
+    module2_audio/
+      caption_routes.py
+      caption_extractor.py
+      caption_schemas.py
+    module3_keyboard/
+      keyboard_routes.py
+      keyboard_schemas.py
+  prompts/
+  requirements.txt
 ```
 
----
+## WCAG Compliance
+
+### Target Level
+
+- System target: WCAG 2.2 AA for user-facing extension behavior (captions overlay and keyboard control).
+
+### Checklist
+
+- Captions Overlay Support (Backend responsibilities)
+  - Return stable caption metadata schema to support language fallback.
+  - Enforce request validation for video URLs.
+  - Maintain bounded retries/timeouts so extension can fail gracefully.
+  - Avoid introducing payload fields that require unsafe HTML rendering.
+
+- Keyboard Control Support (Backend responsibilities)
+  - Keep telemetry endpoints optional and non-blocking for core keyboard UX.
+  - Accept validated payloads only.
+  - Preserve endpoint compatibility so extension keyboard controls are not coupled to telemetry availability.
+
+### Acceptance Criteria
+
+- Captions Overlay
+  - `POST /api/v1/captions/extract` preserves current response contract used by extension.
+  - On extraction failure, API returns structured error payloads for graceful client fallback.
+  - Health endpoint remains available for diagnostics.
+
+- Keyboard Control
+  - Extension keyboard controls continue to function even if keyboard analytics endpoint is degraded.
+  - Backend responses remain contract-consistent (`ok/data/error` envelope at integration boundary).
 
 
 ## Module 2 Transition Status (Important)
@@ -161,206 +219,37 @@ If users see “captions unavailable”, validate adapter fallback, track availa
 
 ## Quick Start
 
-### Prerequisites
-- Python 3.11+
-- Google Gemini API key
-- Optional: Redis server (Backend will auto-fallback to RAM if Redis is missing)
-
-### Installation
-
-**1. Clone and navigate**
 ```bash
 cd backend
-```
-
-**2. Virtual environment**
-```bash
 python -m venv venv
-# Windows:
+# Windows
 ./venv/Scripts/activate
-# Mac/Linux:
-source venv/bin/activate
-```
-
-**3. Install dependencies**
-```bash
+# macOS/Linux
+# source venv/bin/activate
 pip install -r requirements.txt
-```
-
-**4. Configure environment**
-
-Create a `.env` file based on `.env.example`:
-
-```env
-GEMINI_API_KEY=your_api_key_here
-# Optional (Leave as is for local dev):
-REDIS_URL=redis://localhost:6379/0
-```
-
-**5. Run server**
-```bash
 uvicorn app.main:app --reload
 ```
 
-Server runs at `http://127.0.0.1:8000`
+## Environment
 
----
+Required:
+- `GEMINI_API_KEY`
 
-## API Reference
-
-### Module 1: Image Analysis
-
-**`POST /api/v1/image/analyze`**
-
-**Request:**
-```json
-{
-  "image_url": "https://example.com/photo.jpg",
-  "page_url": "https://example.com/article"
-}
-```
-
-**Response:**
-```json
-{
-  "description": "A golden retriever sitting in autumn leaves",
-  "confidence": 0.95,
-  "response_time_sec": 1.82,
-  "source": "AI_Generated",
-  "model": "gemini-flash-latest",
-  "cached": false
-}
-```
-
----
-
-### Module 2: Audio Captioning
-
-**`POST /api/v1/captions/extract`**
-
-**Request:**
-```json
-{
-  "video_url": "https://youtube.com/watch?v=abc123"
-}
-```
-
-**Response:**
-```json
-{
-  "captions": "Full transcript text here...",
-  "language": "en",
-  "cached": false,
-  "source": "YouTube"
-}
-```
-
-**`GET /api/v1/captions/health`** - Health check
-
----
-
-### Module 3: Keyboard Accessibility
-
-**`POST /api/v1/keyboard/track-fixes`**
-
-**Request:**
-```json
-{
-  "url": "https://reddit.com/r/programming",
-  "domain": "reddit.com",
-  "fixes_applied": ["skip_link", "focus_indicators", "keyboard_shortcuts"]
-}
-```
-
-**Response:**
-```json
-{
-  "status": "recorded",
-  "domain": "reddit.com",
-  "total_visits_this_domain": 42,
-  "message": "Successfully recorded 3 fixes"
-}
-```
-
-**`GET /api/v1/keyboard/analytics`** - Aggregated statistics
-
-**`GET /api/v1/keyboard/health`** - Health check
-
----
-
-### System Endpoints
-
-**`GET /`** - Health check
-
-**`GET /metrics`** - Usage statistics for all modules
-
-**`GET /docs`** - Interactive Swagger Documentation
-
----
-
-## Configuration
-
-### Environment variables (`.env`):
-- `GEMINI_API_KEY`: **Required** for AI generation (Module 1)
-- `REDIS_URL`: (Optional) Connection string for Redis
-
-### Constants (`app/config.py`):
-- `MAX_IMAGE_SIZE_BYTES`: 5MB limit (Module 1)
-- `CACHE_TTL_SECONDS`: 7 days (Module 1)
-- `CACHE_TTL_CAPTIONS`: 30 days (Module 2)
-- `CACHE_TTL_KEYBOARD`: 30 days (Module 3)
-- `MAX_CONCURRENT_AI_CALLS`: 5 parallel requests (Module 1)
-
----
-
-## Logging
-
-**Dual logging system:** Console (Colored) + File (Structured)
-
-**File Output:** `logs/accessable_2026-01-xx.log`
-
-```
-[2026-01-26 14:23:45] [INFO] Module 1: Image Analysis - Active
-[2026-01-26 14:23:45] [INFO] Module 2: Audio Captioning - Active
-[2026-01-26 14:23:45] [INFO] Module 3: Keyboard Accessibility - Active
-[2026-01-26 14:23:46] [SUCCESS] Image downloaded: 800x600px, 145.2KB
-[2026-01-26 14:23:48] [SUCCESS] AI response received in 1.85s
-[2026-01-26 14:24:01] [SUCCESS] Tracked fixes for reddit.com: skip_link, focus_indicators
-```
-
----
+Optional:
+- `REDIS_URL`
 
 ## Deployment (Render)
 
-**Environment Variables:** Add `GEMINI_API_KEY` and `REDIS_URL` (Internal Render URL)
-
-**Build Command:**
+Build:
 ```bash
 pip install -r requirements.txt
 ```
 
-**Start Command:**
+Start:
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
----
+## License
 
-## Module Status
-
-- [x] **Module 1**: Image Analysis (AI Vision) 
-- [x] **Module 2**: Audio Captioning (Caption Extraction) 
-- [x] **Module 3**: Keyboard Accessibility (Navigation Fixes) 
-- [ ] **Future**: Rate limiting (slowapi)
-- [ ] **Future**: PostgreSQL analytics
-
----
-
-## Team
-
-**Tooba Fazil** - Backend Engineering & AI Integration  
-**Fatima Abu Bakar** - Frontend Development & UX
-
----
-
-**Questions?** faziltooba95@gmail.com | [API Docs](https://accessable-fyp.onrender.com/docs)
+MIT

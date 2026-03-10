@@ -41,6 +41,7 @@
 
   const STORAGE_KEYS = Object.freeze({
     SETTINGS: "accessable_settings",
+    CAPTIONS_SETTINGS: "accessable_captions_settings",
     STATE: "accessable_state",
     CACHE_PREFIX: "accessable_cache_",
     TELEMETRY_PREFIX: "accessable_telemetry_",
@@ -50,6 +51,28 @@
     speed: 1,
     pitch: 1,
     volume: 1,
+  });
+
+  const DEFAULT_CAPTIONS_SETTINGS = Object.freeze({
+    enabled: true,
+    preferredLanguages: ["en"],
+    overlay: Object.freeze({
+      position: "bottom",
+      fontSizePx: 20,
+      lineHeight: 1.35,
+      textColor: "#ffffff",
+      backgroundColor: "#111111",
+      backgroundOpacity: 0.78,
+      maxWidthPercent: 88,
+      paddingPx: 10,
+      borderRadiusPx: 10,
+      fontWeight: 600,
+    }),
+    network: Object.freeze({
+      timeoutMs: 4000,
+      retries: 2,
+    }),
+    telemetryEnabled: false,
   });
 
   const DEFAULT_STATE = Object.freeze({
@@ -62,6 +85,7 @@
   const CACHE_POLICY = Object.freeze({
     IMAGE_TTL_MS: 7 * 24 * 60 * 60 * 1000,
     CAPTIONS_TTL_MS: 30 * 24 * 60 * 60 * 1000,
+    CAPTIONS_CUE_TTL_MS: 24 * 60 * 60 * 1000,
     NEGATIVE_TTL_MS: 12 * 60 * 60 * 1000,
     TELEMETRY_DEDUPE_TTL_MS: 30 * 60 * 1000,
   });
@@ -72,6 +96,8 @@
     MAX_RETRIES: 3,
     RETRY_BASE_DELAY_MS: 800,
     RETRY_JITTER_MS: 250,
+    CAPTIONS_FETCH_TIMEOUT_MS: 4000,
+    CAPTIONS_FETCH_MAX_RETRIES: 2,
   });
 
   function toAbsoluteUrl(path) {
@@ -123,6 +149,7 @@
     ENDPOINTS,
     STORAGE_KEYS,
     DEFAULT_SETTINGS,
+    DEFAULT_CAPTIONS_SETTINGS,
     DEFAULT_STATE,
     CACHE_POLICY,
     REQUEST_POLICY,

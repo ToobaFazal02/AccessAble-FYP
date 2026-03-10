@@ -1,6 +1,7 @@
 # AccessAble FYP
 
 
+
 ![Status](https://img.shields.io/badge/Status-Active-green)
 ![Version](https://img.shields.io/badge/Version-1.1.0-blue)
 ![Tech](https://img.shields.io/badge/Stack-FastAPI_|_Chrome_Manifest_V3-3776AB)
@@ -9,14 +10,58 @@
 AccessAble is a Manifest V3 Chrome extension + FastAPI backend that improves web accessibility in real time.  
 The extension detects accessibility gaps on visited pages and applies assistive behaviors with AI-backed services for image descriptions and caption checks.
 >>>>>>> 4a06c43 (Updated popup UI/UX with modern design and fixed background scripts)
+=======
+AccessAble is a Manifest V3 Chrome extension with a FastAPI backend that improves web accessibility in real time.
+The extension applies assistive behaviors on-page, while the backend provides AI and metadata services.
+>>>>>>> b8c4187 (feat(module2): implement phase-1 client-first captions architecture with adapters, engine, renderer, state, and tests)
 
-## Current Scope
+## Current Status (March 2026)
 
-- Screen reader flow in content script (read, pause, next, previous)
-- AI alt-text generation for missing image descriptions
-- Video caption candidate scanning and caption metadata checks
-- Keyboard/focus accessibility fixes with telemetry tracking
-- Shared action contracts between popup, content scripts, and service worker
+- Module 1: Screen reader + AI image alt text flow is active.
+- Module 2: Audio captioning is in Phase 1 implementation (client-first + hybrid backend).
+- Module 3: Keyboard accessibility fixes + telemetry controls are active.
+
+
+
+## Architecture Overview
+
+AccessAble follows a client-first architecture with hybrid backend support:
+
+- Extension (primary runtime): DOM detection, cue syncing, caption rendering, user settings, SPA lifecycle handling.
+- Backend (support service): caption metadata extraction endpoint and existing Module 1/3 APIs.
+- Shared contracts: action names, endpoint paths, storage keys, and cache policies in one contract layer.
+
+### Phase 1 Module 2 Design (Extension)
+
+```text
+extension/
+  module2/
+    adapters/
+      youtube-adapter.js
+      html5-track-adapter.js
+      adapter-contracts.js
+      adapter-utils.js
+    engine/
+      cue-normalizer.js
+      language-fallback.js
+      active-cue-selector.js
+      caption-engine.js
+    renderer/
+      caption-overlay-renderer.js
+      caption-overlay-styles.js
+    state/
+      settings-store.js
+      cue-cache.js
+      lifecycle-manager.js
+    index.js
+```
+
+### Existing Backend Surface (No Breaking Changes in Phase 1)
+
+- `POST /api/v1/captions/extract`
+- `GET /api/v1/captions/health`
+
+Phase 1 keeps backend contracts stable and implements the new logic on the extension side.
 
 
 **AccessAble** is a browser-based accessibility ecosystem designed to reduce digital barriers for users with visual, hearing, motor, and cognitive impairments. Instead of relying on intrusive overlays or requiring site owners to modify source code, AccessAble uses a **Chrome Extension + API architecture** to improve accessibility at the user layer.
@@ -30,19 +75,8 @@ backend/
   app/
     main.py
     module1_image/
-      image_routes.py
-      image_service.py
-      gemini_client.py
     module2_audio/
-      caption_routes.py
-      caption_extractor.py
-      caption_schemas.py
     module3_keyboard/
-      keyboard_routes.py
-      keyboard_schemas.py
-    cache.py
-    metrics.py
-    config.py
 extension/
   manifest.json
   shared/
@@ -56,6 +90,12 @@ extension/
       module1-image.js
       module2-captions.js
       module3-keyboard.js
+  module2/
+    adapters/
+    engine/
+    renderer/
+    state/
+    index.js
   popup/
     popup.html
     popup.css
@@ -63,7 +103,8 @@ extension/
 ```
 >>>>>>> 4a06c43 (Updated popup UI/UX with modern design and fixed background scripts)
 
-## Frontend Architecture (Chrome Extension)
+## Message Envelope
+
 
 ### 1. Manifest V3 Boot
 
@@ -119,7 +160,7 @@ All extension surfaces use this contract to avoid string drift and request misma
 
 Files: `extension/popup/popup.html`, `extension/popup/popup.css`, `extension/popup/popup.js`
 
-<<<<<<< HEAD
+
 ## Current Code Status (As Implemented)
 
 ### ✅ Module 1: Visual Assistance (Implemented)
@@ -410,42 +451,24 @@ Responsibilities:
 ## Message Passing Pattern
 
 All messages use a contract action and return a normalized envelope:
+=======
+All extension and background messages follow:
+>>>>>>> b8c4187 (feat(module2): implement phase-1 client-first captions architecture with adapters, engine, renderer, state, and tests)
 
 ```js
 {
   ok: true | false,
-  data: { ... },   // when ok === true
+  data: { ... },
   error: { message, statusCode? } | null
 }
 
 ```
 
-Main action groups:
+## WCAG Compliance
 
-- Core
-  - `core.ping`
-  - `core.checkBackend`
-- Image
-  - `image.analyzeBatch`
-  - `image.analyzeSingle`
-- Captions
-  - `captions.extract`
-- Keyboard telemetry
-  - `keyboard.trackFixes`
-  - `keyboard.getAnalytics`
-- Content controls
-  - `content.toggleReader`
-  - `content.pauseReader`
-  - `content.readNext`
-  - `content.readPrevious`
-  - `content.updateSetting`
-  - `content.toggleImageModule`
-  - `content.scanImagesNow`
-  - `content.toggleKeyboardModule`
-  - `content.getKeyboardStatus`
-  - `content.toggleCaptionsModule`
-  - `content.scanVideoCandidates`
+### Target Level
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 | Component | Technology | Role |
 | :--- | :--- | :--- |
@@ -457,9 +480,13 @@ Main action groups:
 =======
 ## Backend Architecture (FastAPI)
 >>>>>>> 4a06c43 (Updated popup UI/UX with modern design and fixed background scripts)
+=======
+- Primary target: WCAG 2.2 AA for extension UI, captions overlay, and keyboard operation.
+>>>>>>> b8c4187 (feat(module2): implement phase-1 client-first captions architecture with adapters, engine, renderer, state, and tests)
 
-Main app: `backend/app/main.py`
+### Checklist
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 ## Installation (Development)
 
@@ -487,29 +514,35 @@ uvicorn app.main:app --reload
 This project is licensed under the **MIT License**. See [LICENSE](LICENSE).
 =======
 Registered routers:
+=======
+- Captions Overlay
+  - Cue text must be rendered as plain text (no unsafe HTML injection).
+  - Foreground/background combinations must meet at least 4.5:1 contrast.
+  - Overlay must support adjustable size/position and remain readable at 200% zoom.
+  - Overlay updates must not steal keyboard focus.
+  - Missing-caption state must provide clear non-blocking feedback.
+>>>>>>> b8c4187 (feat(module2): implement phase-1 client-first captions architecture with adapters, engine, renderer, state, and tests)
 
-- Module 1 (Image): `backend/app/module1_image/image_routes.py`
-  - `POST /api/v1/image/analyze`
-- Module 2 (Captions): `backend/app/module2_audio/caption_routes.py`
-  - `POST /api/v1/captions/extract`
-  - `GET /api/v1/captions/health`
-- Module 3 (Keyboard): `backend/app/module3_keyboard/keyboard_routes.py`
-  - `POST /api/v1/keyboard/track-fixes`
-  - `GET /api/v1/keyboard/analytics`
-  - `GET /api/v1/keyboard/health`
+- Keyboard Control
+  - All controls and toggles must be operable by keyboard only.
+  - Visible focus indicator must be present and persistent.
+  - No keyboard trap introduced by extension UI.
+  - Shortcuts must avoid hijacking text input contexts.
+  - Popup and overlay actions must expose accessible names.
 
-System endpoints:
+### Acceptance Criteria
 
-- `GET /` health and module listing
-- `GET /metrics` service metrics
+- Captions Overlay
+  - Active cue matches playback time and updates reliably during seek/play/pause.
+  - Language fallback chooses best available track using preference order.
+  - Overlay style settings persist in `chrome.storage.sync` and reload correctly.
+  - When captions are unavailable, UI shows a graceful status without breaking playback.
 
-## Extension <-> Backend Integration
-
-1. Popup or content sends action to background service worker.
-2. Background validates payload, applies queue/retry/cache policy.
-3. Background calls FastAPI endpoint from contract `ENDPOINTS`.
-4. Response is normalized and sent back to popup/content.
-5. Content updates DOM (alt text, markers, reader state, keyboard fixes).
+- Keyboard Control
+  - User can reach every extension control via `Tab` and activate with `Enter`/`Space`.
+  - Focus remains visible at normal and 200% zoom.
+  - Escaping overlay or widget returns control to page without trap.
+  - Module 1 and Module 3 keyboard behaviors remain functional.
 
 ## Local Development
 
@@ -534,12 +567,12 @@ uvicorn app.main:app --reload --port 8000
 4. Select the `extension/` folder
 5. Pin AccessAble and open the popup
 
-## Notes for Contributors
+## Contributor Notes
 
-- Add new actions only in `extension/shared/contracts.js` first.
-- Keep popup control IDs stable to avoid breaking existing runtime handlers.
-- Prefer routing network calls through background service worker, not popup/content directly.
-- Keep response envelope shape consistent (`ok`, `data`, `error`) across modules.
+- Add or update action names in `extension/shared/contracts.js` first.
+- Keep `content/content.js` thin; place Module 2 logic in `extension/module2/*`.
+- Route network traffic through `background/background-wrapper.js`.
+- Keep telemetry disabled by default and opt-in only.
 
 ## License
 
