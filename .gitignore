@@ -205,3 +205,17 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+# --- AccessAble Custom Ignores ---
+
+# Ignore the logs folder we just created
+logs/
+
+# Ignore VS Code local settings (recommended)
+.vscode/
+
+# Ignore local test images (agar tumne download kiye hon)
+*.jpg
+*.png
+*.webp

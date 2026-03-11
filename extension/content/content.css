@@ -204,3 +204,21 @@ img.accessible-ai-highlight::after {
   z-index: 10000;
   border: 1px solid rgba(255, 255, 255, 0.5);
 }
+
+/* Highlighting for images missing alt text */
+[data-accessible-missing-alt="true"] {
+  border: 2px solid red !important;
+  box-shadow: 0 0 5px rgba(255, 0, 0, 0.5);
+}
+
+/* Highlight for currently reading element */
+.accessible-highlight {
+  outline: 2px solid #4CAF50 !important;
+  background-color: rgba(76, 175, 80, 0.1) !important;
+}
+
+/* Highlight for clicked images in image mode */
+.accessible-ai-highlight {
+  border: 3px solid #2196F3 !important;
+  box-shadow: 0 0 10px rgba(33, 150, 243, 0.6);
+}
