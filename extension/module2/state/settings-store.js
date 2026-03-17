@@ -19,7 +19,15 @@
       timeoutMs: 4000,
       retries: 2,
     },
+    assist: {
+      enabled: false,
+      mode: "simplify",
+      targetLanguage: "",
+      timeoutMs: 2500,
+      retries: 1,
+    },
     telemetryEnabled: false,
+    debug: false,
   });
 
   function createCaptionsSettingsStore() {
@@ -93,13 +101,16 @@
       ...(source.overlay || {}),
     });
     const network = normalizeNetworkSettings(source.network);
+    const assist = normalizeAssistSettings(source.assist);
 
     return {
       enabled: source.enabled !== false,
       preferredLanguages,
       overlay,
       network,
+      assist,
       telemetryEnabled: source.telemetryEnabled === true,
+      debug: source.debug === true,
     };
   }
 
@@ -139,6 +150,33 @@
         DEFAULT_CAPTIONS_SETTINGS.network.timeoutMs
       ),
       retries: clampInteger(source.retries, 0, 5, DEFAULT_CAPTIONS_SETTINGS.network.retries),
+    };
+  }
+
+  function normalizeAssistSettings(raw) {
+    const source = raw && typeof raw === "object" ? raw : {};
+    const mode = String(source.mode || DEFAULT_CAPTIONS_SETTINGS.assist.mode || "simplify")
+      .trim()
+      .toLowerCase();
+    const allowedModes = new Set(["simplify", "translate", "summarize"]);
+    return {
+      enabled: source.enabled === true,
+      mode: allowedModes.has(mode) ? mode : DEFAULT_CAPTIONS_SETTINGS.assist.mode,
+      targetLanguage: String(source.targetLanguage || "")
+        .trim()
+        .toLowerCase(),
+      timeoutMs: clampInteger(
+        source.timeoutMs,
+        500,
+        15000,
+        DEFAULT_CAPTIONS_SETTINGS.assist.timeoutMs
+      ),
+      retries: clampInteger(
+        source.retries,
+        0,
+        3,
+        DEFAULT_CAPTIONS_SETTINGS.assist.retries
+      ),
     };
   }
 

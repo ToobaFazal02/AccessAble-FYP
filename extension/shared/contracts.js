@@ -11,6 +11,9 @@
     IMAGE_ANALYZE_SINGLE: "image.analyzeSingle",
 
     CAPTIONS_EXTRACT: "captions.extract",
+    CAPTIONS_ASSIST_SIMPLIFY: "captions.assistSimplify",
+    CAPTIONS_ASSIST_TRANSLATE: "captions.assistTranslate",
+    CAPTIONS_ASSIST_SUMMARIZE: "captions.assistSummarize",
 
     KEYBOARD_TRACK_FIXES: "keyboard.trackFixes",
     KEYBOARD_GET_ANALYTICS: "keyboard.getAnalytics",
@@ -35,6 +38,9 @@
     ROOT: "/",
     IMAGE_ANALYZE: "/api/v1/image/analyze",
     CAPTIONS_EXTRACT: "/api/v1/captions/extract",
+    CAPTIONS_ASSIST_SIMPLIFY: "/api/v1/captions/assist/simplify",
+    CAPTIONS_ASSIST_TRANSLATE: "/api/v1/captions/assist/translate",
+    CAPTIONS_ASSIST_SUMMARIZE: "/api/v1/captions/assist/summarize",
     KEYBOARD_TRACK_FIXES: "/api/v1/keyboard/track-fixes",
     KEYBOARD_ANALYTICS: "/api/v1/keyboard/analytics",
   });
@@ -72,7 +78,15 @@
       timeoutMs: 4000,
       retries: 2,
     }),
+    assist: Object.freeze({
+      enabled: false,
+      mode: "simplify",
+      targetLanguage: "",
+      timeoutMs: 2500,
+      retries: 1,
+    }),
     telemetryEnabled: false,
+    debug: false,
   });
 
   const DEFAULT_STATE = Object.freeze({

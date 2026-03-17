@@ -10,6 +10,7 @@ const {
   DEFAULT_STATE,
   CACHE_POLICY,
   REQUEST_POLICY,
+  DEFAULT_CAPTIONS_SETTINGS,
   toAbsoluteUrl,
   normalizeUrl,
   getDomain,
@@ -303,6 +304,11 @@ async function routeMessage(request, sender) {
     case ACTIONS.CAPTIONS_EXTRACT:
       return extractCaptions(request?.payload || {});
 
+    case ACTIONS.CAPTIONS_ASSIST_SIMPLIFY:
+    case ACTIONS.CAPTIONS_ASSIST_TRANSLATE:
+    case ACTIONS.CAPTIONS_ASSIST_SUMMARIZE:
+      return assistCaptions(request?.payload || {}, request?.action);
+
     case ACTIONS.KEYBOARD_TRACK_FIXES:
       return trackKeyboardFixes(request?.payload || {}, sender);
 
@@ -534,6 +540,64 @@ async function extractCaptions(payload) {
   return { ok: true, data: { ...normalized, fromCache: false } };
 }
 
+async function assistCaptions(payload, action) {
+  const endpointMap = {
+    [ACTIONS.CAPTIONS_ASSIST_SIMPLIFY]: ENDPOINTS.CAPTIONS_ASSIST_SIMPLIFY,
+    [ACTIONS.CAPTIONS_ASSIST_TRANSLATE]: ENDPOINTS.CAPTIONS_ASSIST_TRANSLATE,
+    [ACTIONS.CAPTIONS_ASSIST_SUMMARIZE]: ENDPOINTS.CAPTIONS_ASSIST_SUMMARIZE,
+  };
+  const endpoint = endpointMap[action];
+  if (!endpoint) {
+    return { ok: false, error: { message: "Unknown assist action" } };
+  }
+
+  const cues = Array.isArray(payload?.cues) ? payload.cues : [];
+  if (cues.length === 0) {
+    return { ok: false, error: { message: "Invalid assist payload" } };
+  }
+
+  const timeoutMs = clampInteger(
+    payload?.timeoutMs,
+    500,
+    15000,
+    DEFAULT_CAPTIONS_SETTINGS?.assist?.timeoutMs || 2500
+  );
+  const retries = clampInteger(
+    payload?.retries,
+    0,
+    3,
+    DEFAULT_CAPTIONS_SETTINGS?.assist?.retries || 1
+  );
+
+  const response = await requestWithRetryBounded({
+    endpoint,
+    method: "POST",
+    body: {
+      mode: String(payload?.mode || "").trim(),
+      cues,
+      source_lang: String(payload?.source_lang || ""),
+      target_lang: String(payload?.target_lang || ""),
+      page_url: normalizeUrl(payload?.page_url || ""),
+      video_url: normalizeUrl(payload?.video_url || ""),
+      telemetry_enabled: payload?.telemetry_enabled === true,
+    },
+    parseJson: true,
+    timeoutMs,
+    retries,
+  });
+
+  if (!response.ok) {
+    const detail = response.payload?.detail;
+    const message =
+      typeof detail === "string"
+        ? detail
+        : detail?.error || `Caption assist failed (${response.status})`;
+    return { ok: false, error: { message, statusCode: response.status } };
+  }
+
+  return { ok: true, data: response.payload || {} };
+}
+
 async function trackKeyboardFixes(payload, sender) {
   const url = normalizeUrl(payload.url || sender?.tab?.url || "");
   const domain = getDomain(url);
@@ -672,7 +736,46 @@ async function requestWithRetry({ endpoint, method, body, parseJson }) {
   };
 }
 
-async function performFetch({ endpoint, method, body, parseJson }) {
+async function requestWithRetryBounded({
+  endpoint,
+  method,
+  body,
+  parseJson,
+  timeoutMs,
+  retries,
+}) {
+  let attempt = 0;
+  const maxRetries = clampInteger(retries, 0, 5, 0);
+
+  while (attempt <= maxRetries) {
+    const response = await performFetch({
+      endpoint,
+      method,
+      body,
+      parseJson,
+      timeoutMs,
+    });
+
+    if (response.ok || attempt === maxRetries) {
+      return response;
+    }
+
+    await sleep(300 * (attempt + 1));
+    attempt += 1;
+  }
+
+  return {
+    ok: false,
+    status: 599,
+    payload: null,
+  };
+}
+
+async function performFetch({ endpoint, method, body, parseJson, timeoutMs }) {
+  const controller = timeoutMs ? new AbortController() : null;
+  const timer = controller
+    ? setTimeout(() => controller.abort(), Math.max(0, Number(timeoutMs) || 0))
+    : null;
   try {
     const response = await fetch(toAbsoluteUrl(endpoint), {
       method,
@@ -680,6 +783,7 @@ async function performFetch({ endpoint, method, body, parseJson }) {
         "Content-Type": "application/json",
       },
       body: body ? JSON.stringify(body) : undefined,
+      signal: controller?.signal,
     });
 
     let payload = null;
@@ -698,12 +802,17 @@ async function performFetch({ endpoint, method, body, parseJson }) {
       retryAfterMs: parseRetryAfterHeader(response.headers.get("Retry-After")),
     };
   } catch (error) {
+    const isTimeout = controller?.signal?.aborted;
     return {
       ok: false,
       status: 598,
-      payload: { detail: error.message || "Network failure" },
+      payload: { detail: isTimeout ? "Request timed out" : error.message || "Network failure" },
       retryAfterMs: 0,
     };
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
   }
 }
 
@@ -770,4 +879,12 @@ function parseRetryAfterHeader(value) {
   }
 
   return Math.max(0, asDate - Date.now());
+}
+
+function clampInteger(value, min, max, fallback) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(numeric)));
 }
