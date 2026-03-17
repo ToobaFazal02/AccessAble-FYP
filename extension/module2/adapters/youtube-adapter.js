@@ -13,6 +13,8 @@
   const parseVttCues = utils.parseVttCues || (() => []);
   const isSafeCaptionUrl = utils.isSafeCaptionUrl || (() => false);
   const normalizeCues = cueNormalizer.normalizeCues || ((items) => items || []);
+  const debugLog = utils.debugLog || (() => {});
+  const normalizeUrl = sharedContracts.normalizeUrl || ((value) => String(value || "").trim());
 
   const YOUTUBE_HOSTS = new Set([
     "youtube.com",
@@ -51,12 +53,28 @@
   }
 
   async function discoverTracks(context, options = {}) {
-    const tracks = extractTracksFromPlayerResponse();
+    const playerResponse = getPlayerResponse();
+    const tracks = extractTracksFromPlayerResponse(playerResponse);
+
+    debugLog(options.debug, "player_response", {
+      available: Boolean(playerResponse),
+      trackCount: tracks.length,
+    });
+
     if (tracks.length > 0) {
+      debugLog(options.debug, "track_discovery", { player: tracks.length, backend: 0 });
       return tracks;
     }
 
-    const backendTracks = await discoverTracksFromBackend(context, options.signal);
+    const backendTracks = await discoverTracksFromBackend(
+      context,
+      options.signal,
+      options.debug
+    );
+    debugLog(options.debug, "track_discovery", {
+      player: 0,
+      backend: backendTracks.length,
+    });
     return backendTracks;
   }
 
@@ -68,6 +86,7 @@
       return [];
     }
 
+    let jsonParseFailed = false;
     const jsonUrl = withYouTubeFormat(trackUrl, "json3");
     try {
       const jsonResponse = await fetchWithRetry(jsonUrl, {
@@ -83,10 +102,18 @@
         isAuto: track.isAuto,
       });
       if (normalizedJson.length > 0) {
+        debugLog(options.debug, "cue_fetch_source", {
+          source: "json3",
+          cueCount: normalizedJson.length,
+          lang: track.lang,
+          isAuto: Boolean(track.isAuto),
+        });
         return normalizedJson;
       }
-    } catch (_) {
-      // Fall through to VTT fetch.
+    } catch (error) {
+      if (error?.name === "SyntaxError") {
+        jsonParseFailed = true;
+      }
     }
 
     const vttUrl = withYouTubeFormat(trackUrl, "vtt");
@@ -97,11 +124,36 @@
       retries,
     });
     const vttContent = await vttResponse.text();
-    const parsedVttCues = parseVttCues(vttContent, track.lang, track.isAuto);
-    return normalizeCues(parsedVttCues, {
+    let parsedVttCues = [];
+    try {
+      parsedVttCues = parseVttCues(vttContent, track.lang, track.isAuto);
+    } catch (error) {
+      const parseError = new Error(error?.message || "Caption parsing failed");
+      parseError.code = "parser_error";
+      throw parseError;
+    }
+
+    const normalizedVtt = normalizeCues(parsedVttCues, {
       lang: track.lang,
       isAuto: track.isAuto,
     });
+    if (normalizedVtt.length > 0) {
+      debugLog(options.debug, "cue_fetch_source", {
+        source: "vtt",
+        cueCount: normalizedVtt.length,
+        lang: track.lang,
+        isAuto: Boolean(track.isAuto),
+      });
+      return normalizedVtt;
+    }
+
+    if (jsonParseFailed) {
+      const parseError = new Error("Caption parsing failed");
+      parseError.code = "parser_error";
+      throw parseError;
+    }
+
+    return normalizedVtt;
   }
 
   function bindTimeSource(context, onTime) {
@@ -134,8 +186,7 @@
 
   function destroy() {}
 
-  function extractTracksFromPlayerResponse() {
-    const playerResponse = getPlayerResponse();
+  function extractTracksFromPlayerResponse(playerResponse) {
     const captionTracks =
       playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
     if (!Array.isArray(captionTracks)) {
@@ -180,13 +231,14 @@
     return result;
   }
 
-  async function discoverTracksFromBackend(context, signal) {
-    const action = sharedContracts?.ACTIONS?.CAPTIONS_EXTRACT;
+  async function discoverTracksFromBackend(context, signal, debug) {
+    const action =
+      sharedContracts?.ACTIONS?.CAPTIONS_EXTRACT || "captions.extract";
     if (!action || !globalThis.chrome?.runtime?.sendMessage) {
       return [];
     }
 
-    const mediaUrl = String(context?.mediaUrl || context?.pageUrl || "").trim();
+    const mediaUrl = selectBackendVideoUrl(context);
     if (!mediaUrl) {
       return [];
     }
@@ -229,8 +281,15 @@
       }
 
       return result;
-    } catch (_) {
-      return [];
+    } catch (error) {
+      debugLog(debug, "backend_fallback_failed", {
+        error: error?.message || "Backend fallback failed",
+      });
+      const backendError = new Error(
+        error?.message || "Caption backend unavailable"
+      );
+      backendError.code = "backend_unreachable";
+      throw backendError;
     }
   }
 
@@ -344,6 +403,32 @@
     } catch (_) {
       return String(rawUrlOrHost || "").toLowerCase().replace(/^https?:\/\//, "").split("/")[0];
     }
+  }
+
+  function selectBackendVideoUrl(context) {
+    const pageUrl = normalizeUrl(context?.pageUrl || "");
+    const mediaUrl = normalizeUrl(context?.mediaUrl || "");
+
+    const pageVideoId = extractYouTubeVideoId(pageUrl);
+    const mediaVideoId = extractYouTubeVideoId(mediaUrl);
+
+    if (pageVideoId) {
+      return pageUrl;
+    }
+
+    if (mediaVideoId && !mediaUrl.startsWith("blob:")) {
+      return mediaUrl;
+    }
+
+    if (pageUrl) {
+      return pageUrl;
+    }
+
+    if (!mediaUrl.startsWith("blob:")) {
+      return mediaUrl;
+    }
+
+    return "";
   }
 
   function sendRuntimeMessage(message) {

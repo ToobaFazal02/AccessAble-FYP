@@ -223,6 +223,14 @@
     return (hash >>> 0).toString(16);
   }
 
+  function debugLog(enabled, event, detail = {}) {
+    if (!enabled || !globalThis.console || typeof console.debug !== "function") {
+      return;
+    }
+    const payload = detail && typeof detail === "object" ? detail : { detail };
+    console.debug("[AccessAble][Module2]", { event, ...payload });
+  }
+
   const api = Object.freeze({
     sanitizeCueText,
     fetchWithRetry,
@@ -231,6 +239,7 @@
     isSafeCaptionUrl,
     clampInteger,
     simpleHash,
+    debugLog,
   });
 
   if (typeof module !== "undefined" && module.exports) {

@@ -1,6 +1,8 @@
 "use strict";
 
 (() => {
+  const sharedContracts = globalThis.AccessAbleContracts || {};
+  const ACTIONS = sharedContracts.ACTIONS || {};
   const module2 = globalThis.AccessAbleModule2 || null;
 
   function enableHighlights() {
@@ -31,10 +33,15 @@
     return module2?.scanCandidates?.() || [];
   }
 
+  function getActionContracts() {
+    return ACTIONS;
+  }
+
   globalThis.AccessAbleModuleCaptions = {
     scanCandidates,
     enableHighlights,
     disableHighlights,
     getStatus,
+    getActionContracts,
   };
 })();

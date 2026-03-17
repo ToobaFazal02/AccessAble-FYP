@@ -8,6 +8,8 @@
   const settingsStoreApi = globalThis.AccessAbleModule2SettingsStore || {};
   const cueCacheApi = globalThis.AccessAbleModule2CueCache || {};
   const lifecycleApi = globalThis.AccessAbleModule2LifecycleManager || {};
+  const statusMapperApi = globalThis.AccessAbleModule2StatusMapper || {};
+  const assistServiceApi = globalThis.AccessAbleModule2AssistService || {};
 
   const createYouTubeAdapter = adaptersYouTube.createYouTubeAdapter || (() => null);
   const createHTML5TrackAdapter = adaptersHTML5.createHTML5TrackAdapter || (() => null);
@@ -17,6 +19,9 @@
     settingsStoreApi.createCaptionsSettingsStore || (() => null);
   const createCueCache = cueCacheApi.createCueCache || (() => null);
   const createLifecycleManager = lifecycleApi.createLifecycleManager || (() => null);
+  const getCaptionStatusPresentation =
+    statusMapperApi.getCaptionStatusPresentation || (() => null);
+  const createAssistService = assistServiceApi.createAssistService || (() => null);
 
   const state = {
     enabled: false,
@@ -27,6 +32,7 @@
     lifecycle: null,
     settingsStore: null,
     cueCache: null,
+    assistService: null,
     unsubscribeSettings: null,
     taskChain: Promise.resolve(),
     engineStatus: {
@@ -184,6 +190,10 @@
     }
 
     if (!state.engine) {
+      if (!state.assistService) {
+        state.assistService = createAssistService();
+      }
+
       const adapters = [createYouTubeAdapter(), createHTML5TrackAdapter()].filter(Boolean);
       const engine = createCaptionEngine({
         adapters,
@@ -191,6 +201,7 @@
           get: (key, language, isAuto) => state.cueCache.get(key, language, isAuto),
           set: (key, cues, language, isAuto) => state.cueCache.set(key, cues, language, isAuto),
         },
+        assistService: state.assistService,
         onCue: (cue) => {
           if (!state.renderer || !state.enabled) {
             return;
@@ -207,35 +218,17 @@
             return;
           }
 
-          if (status?.stage === "ready") {
+          const presentation = getCaptionStatusPresentation(status);
+          if (!presentation) {
+            return;
+          }
+
+          if (!presentation.show) {
             state.renderer.clear();
             return;
           }
 
-          if (status?.stage === "discovering") {
-            state.renderer.showStatus("Loading captions...", false);
-            return;
-          }
-
-          if (status?.stage === "no_tracks" || status?.stage === "no_cues") {
-            state.renderer.showStatus("Captions unavailable for this video", false);
-            return;
-          }
-
-          if (status?.stage === "unavailable") {
-            state.renderer.showStatus("No active video found", false);
-            return;
-          }
-
-          if (status?.stage === "unsupported") {
-            state.renderer.showStatus("Unsupported video source", false);
-            return;
-          }
-
-          if (status?.stage === "error") {
-            state.renderer.showStatus(status.reason || "Caption engine error", true);
-            return;
-          }
+          state.renderer.showStatus(presentation.message, presentation.isError);
         },
       });
       if (!engine || typeof engine.start !== "function" || typeof engine.rebind !== "function") {
