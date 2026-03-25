@@ -27,6 +27,7 @@ const DEFAULT_SETTINGS = contracts.DEFAULT_SETTINGS || {
 };
 const IMAGE_ALT_INJECTED_ACTION = "image.altInjected";
 const IMAGES_FIXED_STORAGE_KEY = "accessable_images_fixed_count";
+const contentInjectionTasks = new Map();
 
 const popupState = {
   readerEnabled: false,
@@ -688,47 +689,58 @@ async function getActiveTab() {
 }
 
 async function ensureContentScript(tabId) {
-  try {
-    const ping = await sendTabMessage(tabId, { action: ACTIONS.PING });
-    return Boolean(ping?.ok);
-  } catch (_) {
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: [
-          "shared/contracts.js",
-          "module2/adapters/adapter-contracts.js",
-          "module2/adapters/adapter-utils.js",
-          "module2/engine/cue-normalizer.js",
-          "module2/assist/assist-service.js",
-          "module2/adapters/youtube-adapter.js",
-          "module2/adapters/html5-track-adapter.js",
-          "module2/engine/language-fallback.js",
-          "module2/engine/active-cue-selector.js",
-          "module2/engine/caption-engine.js",
-          "module2/engine/status-mapper.js",
-          "module2/renderer/caption-overlay-styles.js",
-          "module2/renderer/caption-overlay-renderer.js",
-          "module2/state/settings-store.js",
-          "module2/state/cue-cache.js",
-          "module2/state/lifecycle-manager.js",
-          "module2/index.js",
-          "content/modules/module1-image.js",
-          "content/modules/module2-captions.js",
-          "content/modules/module3-keyboard.js",
-          "content/content.js",
-        ],
-      });
-
-      await chrome.scripting.insertCSS({
-        target: { tabId },
-        files: ["content/content.css"],
-      });
-      return true;
-    } catch (_) {
-      return false;
-    }
+  if (contentInjectionTasks.has(tabId)) {
+    return contentInjectionTasks.get(tabId);
   }
+
+  const task = (async () => {
+    try {
+      const ping = await sendTabMessage(tabId, { action: ACTIONS.PING });
+      return Boolean(ping?.ok);
+    } catch (_) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: [
+            "shared/contracts.js",
+            "module2/adapters/adapter-contracts.js",
+            "module2/adapters/adapter-utils.js",
+            "module2/engine/cue-normalizer.js",
+            "module2/assist/assist-service.js",
+            "module2/adapters/youtube-adapter.js",
+            "module2/adapters/html5-track-adapter.js",
+            "module2/engine/language-fallback.js",
+            "module2/engine/active-cue-selector.js",
+            "module2/engine/caption-engine.js",
+            "module2/engine/status-mapper.js",
+            "module2/renderer/caption-overlay-styles.js",
+            "module2/renderer/caption-overlay-renderer.js",
+            "module2/state/settings-store.js",
+            "module2/state/cue-cache.js",
+            "module2/state/lifecycle-manager.js",
+            "module2/index.js",
+            "content/modules/module1-image.js",
+            "content/modules/module2-captions.js",
+            "content/modules/module3-keyboard.js",
+            "content/content.js",
+          ],
+        });
+
+        await chrome.scripting.insertCSS({
+          target: { tabId },
+          files: ["content/content.css"],
+        });
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+  })();
+
+  contentInjectionTasks.set(tabId, task);
+  const result = await task;
+  contentInjectionTasks.delete(tabId);
+  return result;
 }
 
 function sendTabMessage(tabId, message) {

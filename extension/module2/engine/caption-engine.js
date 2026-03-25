@@ -22,7 +22,7 @@
       context: null,
       track: null,
       cues: [],
-      cueKey: "",
+      contextKey: "",
       activeCueIndex: -1,
       unbindTime: null,
       abortController: null,
@@ -76,7 +76,7 @@
       state.context = context || null;
       state.track = null;
       state.cues = [];
-      state.cueKey = "";
+      state.contextKey = "";
       state.activeCueIndex = -1;
       state.lastError = "";
 
@@ -146,16 +146,16 @@
         }
 
         state.track = selectedTrack;
-        state.cueKey = `${adapter.getContextKey(context)}:${selectedTrack.lang}:${selectedTrack.isAuto ? 1 : 0}`;
+        state.contextKey = adapter.getContextKey(context);
 
         let cues = [];
         if (cueCache && typeof cueCache.get === "function") {
-          cues = await cueCache.get(state.cueKey);
+          cues = await cueCache.get(state.contextKey, selectedTrack.lang, selectedTrack.isAuto);
           if (Array.isArray(cues) && cues.length > 0) {
             debugLog(Boolean(state.settings?.debug), "cue_fetch_source", {
               source: "cache",
               cueCount: cues.length,
-              key: state.cueKey,
+              key: state.contextKey,
             });
           }
         }
@@ -170,7 +170,7 @@
             debug: Boolean(state.settings?.debug),
           });
           if (cueCache && typeof cueCache.set === "function" && Array.isArray(cues) && cues.length > 0) {
-            await cueCache.set(state.cueKey, cues);
+            await cueCache.set(state.contextKey, cues, selectedTrack.lang, selectedTrack.isAuto);
           }
         }
 

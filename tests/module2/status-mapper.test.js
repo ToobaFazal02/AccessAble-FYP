@@ -24,3 +24,19 @@ test("status mapper marks backend_unreachable and parser_error as errors", () =>
   assert.ok(parser.message.toLowerCase().includes("parsed"));
   assert.equal(parser.isError, true);
 });
+
+test("status mapper assigns TTLs per stage policy", () => {
+  const discovering = getCaptionStatusPresentation({ stage: "discovering" });
+  const noTracks = getCaptionStatusPresentation({ stage: "no_tracks" });
+  const noCues = getCaptionStatusPresentation({ stage: "no_cues" });
+  const backend = getCaptionStatusPresentation({ stage: "backend_unreachable" });
+  const parser = getCaptionStatusPresentation({ stage: "parser_error" });
+  const error = getCaptionStatusPresentation({ stage: "error" });
+
+  assert.equal(discovering.ttlMs, 2000);
+  assert.equal(noTracks.ttlMs, 4000);
+  assert.equal(noCues.ttlMs, 4000);
+  assert.equal(backend.ttlMs, 7000);
+  assert.equal(parser.ttlMs, 7000);
+  assert.equal(error.ttlMs, 7000);
+});

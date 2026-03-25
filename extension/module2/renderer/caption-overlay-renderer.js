@@ -6,6 +6,9 @@
     overlayStyles.normalizeOverlaySettings || ((settings) => settings || {});
 
   const OVERLAY_ID = "accessable-captions-overlay";
+  const OVERLAY_OWNER_ATTR = "data-accessable-overlay-owner";
+  const STATUS_AUTO_HIDE_MS = 2500;
+  const STATUS_DEDUPE_WINDOW_MS = 5000;
 
   function createCaptionOverlayRenderer(settings) {
     const state = {
@@ -15,6 +18,11 @@
       settings: normalizeOverlaySettings(settings),
       mounted: false,
       mode: "cue",
+      statusTimerId: 0,
+      statusToken: 0,
+      lastStatusKey: "",
+      lastStatusAt: 0,
+      instanceId: `m2_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 8)}`,
     };
 
     return {
@@ -27,46 +35,52 @@
     };
 
     function mount() {
-      if (state.mounted) {
+      if (state.mounted && state.root) {
         return;
       }
-      const root = document.createElement("section");
-      root.id = OVERLAY_ID;
-      root.setAttribute("role", "status");
-      root.setAttribute("aria-live", "polite");
-      root.setAttribute("aria-atomic", "true");
-      root.style.position = "fixed";
-      root.style.zIndex = "2147483645";
-      root.style.left = "50%";
-      root.style.transform = "translateX(-50%)";
-      root.style.maxWidth = "90vw";
-      root.style.width = "fit-content";
-      root.style.pointerEvents = "none";
-      root.style.display = "none";
-      root.style.boxSizing = "border-box";
-      root.style.textAlign = "center";
-      root.style.fontFamily = '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif';
-      root.style.whiteSpace = "pre-wrap";
-      root.style.wordBreak = "break-word";
+      const existing = document.getElementById(OVERLAY_ID);
+      if (existing) {
+        const textNode = existing.querySelector(".accessable-captions-text");
+        const statusNode = existing.querySelector(".accessable-captions-status");
 
+        if (textNode && statusNode) {
+          state.root = existing;
+          state.textNode = textNode;
+          state.statusNode = statusNode;
+          state.mounted = true;
+          claimOwnership();
+          applyBaseStyles();
+          clear();
+          applySettings();
+          return;
+        }
+
+        existing.remove();
+      }
+
+      const root = document.createElement("section");
       const textNode = document.createElement("p");
+      const statusNode = document.createElement("p");
+
+      root.id = OVERLAY_ID;
+      root.appendChild(textNode);
+      root.appendChild(statusNode);
+      (document.body || document.documentElement).appendChild(root);
+
       textNode.className = "accessable-captions-text";
       textNode.style.margin = "0";
       textNode.style.padding = "0";
 
-      const statusNode = document.createElement("p");
       statusNode.className = "accessable-captions-status";
       statusNode.style.margin = "0";
       statusNode.style.padding = "0";
-
-      root.appendChild(textNode);
-      root.appendChild(statusNode);
-      (document.body || document.documentElement).appendChild(root);
 
       state.root = root;
       state.textNode = textNode;
       state.statusNode = statusNode;
       state.mounted = true;
+      claimOwnership();
+      applyBaseStyles();
       applySettings();
     }
 
@@ -74,7 +88,10 @@
       if (!state.root) {
         return;
       }
-      state.root.remove();
+      clearStatusTimer();
+      if (isOwner()) {
+        state.root.remove();
+      }
       state.root = null;
       state.textNode = null;
       state.statusNode = null;
@@ -92,38 +109,65 @@
         return;
       }
       mount();
-      if (!state.root || !state.textNode || !state.statusNode) {
+      if (!state.root || !state.textNode || !state.statusNode || !isOwner()) {
         return;
       }
       state.mode = "cue";
+      clearStatusTimer();
       state.root.style.display = "block";
       state.textNode.style.display = "block";
       state.statusNode.style.display = "none";
       state.textNode.textContent = cue.text;
+      state.statusNode.textContent = "";
     }
 
-    function showStatus(message, isError) {
+    function showStatus(message, isError, options = {}) {
       mount();
-      if (!state.root || !state.textNode || !state.statusNode) {
+      if (!state.root || !state.textNode || !state.statusNode || !isOwner()) {
         return;
       }
-      state.mode = "status";
       const text = String(message || "").trim();
       if (!text) {
         clear();
         return;
       }
+
+      const code = String(options.code || "status").trim() || "status";
+      const statusKey = `${code}|${text}`;
+      const now = Date.now();
+      if (statusKey === state.lastStatusKey && now - state.lastStatusAt < STATUS_DEDUPE_WINDOW_MS) {
+        return;
+      }
+      state.lastStatusKey = statusKey;
+      state.lastStatusAt = now;
+
+      state.mode = "status";
+      clearStatusTimer();
       state.root.style.display = "block";
       state.textNode.style.display = "none";
       state.statusNode.style.display = "block";
       state.statusNode.textContent = text;
       state.statusNode.style.color = isError ? "#ffd2d2" : state.settings.textColor;
+
+      state.statusToken += 1;
+      const token = state.statusToken;
+      const ttlMs = clampInteger(options.ttlMs, 50, 20000, STATUS_AUTO_HIDE_MS);
+      state.statusTimerId = setTimeout(() => {
+        if (!state.root || !isOwner() || state.mode !== "status") {
+          return;
+        }
+        if (state.statusToken !== token) {
+          return;
+        }
+        clear();
+      }, ttlMs);
     }
 
     function clear() {
-      if (!state.root || !state.textNode || !state.statusNode) {
+      if (!state.root || !state.textNode || !state.statusNode || !isOwner()) {
         return;
       }
+      clearStatusTimer();
       state.textNode.textContent = "";
       state.statusNode.textContent = "";
       state.root.style.display = "none";
@@ -157,6 +201,59 @@
         state.root.style.top = "";
         state.root.style.transform = "translateX(-50%)";
       }
+    }
+
+    function applyBaseStyles() {
+      if (!state.root) {
+        return;
+      }
+
+      state.root.setAttribute("role", "status");
+      state.root.setAttribute("aria-live", "polite");
+      state.root.setAttribute("aria-atomic", "true");
+      state.root.style.position = "fixed";
+      state.root.style.zIndex = "2147483645";
+      state.root.style.left = "50%";
+      state.root.style.transform = "translateX(-50%)";
+      state.root.style.maxWidth = "90vw";
+      state.root.style.width = "fit-content";
+      state.root.style.pointerEvents = "none";
+      state.root.style.display = "none";
+      state.root.style.boxSizing = "border-box";
+      state.root.style.textAlign = "center";
+      state.root.style.fontFamily = '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif';
+      state.root.style.whiteSpace = "pre-wrap";
+      state.root.style.wordBreak = "break-word";
+    }
+
+    function clampInteger(value, min, max, fallback) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return fallback;
+      }
+      return Math.min(max, Math.max(min, Math.round(numeric)));
+    }
+
+    function clearStatusTimer() {
+      if (!state.statusTimerId) {
+        return;
+      }
+      clearTimeout(state.statusTimerId);
+      state.statusTimerId = 0;
+    }
+
+    function claimOwnership() {
+      if (!state.root) {
+        return;
+      }
+      state.root.setAttribute(OVERLAY_OWNER_ATTR, state.instanceId);
+    }
+
+    function isOwner() {
+      return (
+        Boolean(state.root) &&
+        state.root.getAttribute(OVERLAY_OWNER_ATTR) === state.instanceId
+      );
     }
   }
 

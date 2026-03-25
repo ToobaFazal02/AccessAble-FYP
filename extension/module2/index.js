@@ -207,6 +207,7 @@
             return;
           }
           if (cue) {
+            state.renderer.clear();
             state.renderer.showCue(cue);
           } else if (state.engineStatus.stage === "ready") {
             state.renderer.clear();
@@ -223,12 +224,20 @@
             return;
           }
 
+          if (status?.stage === "ready") {
+            state.renderer.clear();
+            return;
+          }
+
           if (!presentation.show) {
             state.renderer.clear();
             return;
           }
 
-          state.renderer.showStatus(presentation.message, presentation.isError);
+          state.renderer.showStatus(presentation.message, presentation.isError, {
+            code: presentation.code,
+            ttlMs: presentation.ttlMs,
+          });
         },
       });
       if (!engine || typeof engine.start !== "function" || typeof engine.rebind !== "function") {
@@ -300,7 +309,10 @@
           reason: error?.message || "Module 2 error",
         };
         if (state.renderer && state.enabled) {
-          state.renderer.showStatus(state.engineStatus.reason, true);
+          state.renderer.showStatus(state.engineStatus.reason, true, {
+            code: "error",
+            ttlMs: 7000,
+          });
         }
       });
     return state.taskChain;
