@@ -1,8 +1,9 @@
 "use strict";
 
-importScripts("../shared/contracts.js");
+importScripts("../shared/contracts.js", "backend-url.js");
 
 const {
+  API_BASE_URL,
   ACTIONS,
   ENDPOINTS,
   STORAGE_KEYS,
@@ -15,6 +16,12 @@ const {
   normalizeUrl,
   getDomain,
 } = globalThis.AccessAbleContracts;
+
+const backendUrlApi = globalThis.AccessAbleBackendUrl || {};
+const resolveBackendBaseUrl =
+  backendUrlApi.resolveBackendBaseUrl || (async () => API_BASE_URL);
+const buildRequestUrl =
+  backendUrlApi.buildRequestUrl || ((_baseUrl, endpoint) => toAbsoluteUrl(endpoint));
 
 const IMAGE_CACHE_SCOPE = "image";
 const CAPTIONS_CACHE_SCOPE = "captions";
@@ -488,6 +495,14 @@ async function getOrAnalyzeImage(imageUrl, pageUrl) {
   };
 }
 
+function logCaptionsDebug(event, detail) {
+  if (!globalThis.console || typeof console.debug !== "function") {
+    return;
+  }
+  const payload = detail && typeof detail === "object" ? detail : { detail };
+  console.debug("[AccessAble][Module2][Captions]", { event, ...payload });
+}
+
 async function extractCaptions(payload) {
   const videoUrl = normalizeUrl(payload.videoUrl);
   const pageUrl = normalizeUrl(payload.pageUrl);
@@ -502,6 +517,13 @@ async function extractCaptions(payload) {
     return { ok: true, data: { ...cached, fromCache: true } };
   }
 
+  const baseUrl = await resolveBackendBaseUrl();
+  logCaptionsDebug("captions_extract_request", {
+    videoUrl,
+    baseUrl,
+    endpoint: ENDPOINTS.CAPTIONS_EXTRACT,
+  });
+
   const requestKey = `captions:${videoUrl}`;
   const response = await queuedRequest({
     requestKey,
@@ -512,6 +534,7 @@ async function extractCaptions(payload) {
       page_url: pageUrl || undefined,
     },
     parseJson: true,
+    baseUrl,
   });
 
   if (!response.ok) {
@@ -520,8 +543,18 @@ async function extractCaptions(payload) {
       typeof detail === "string"
         ? detail
         : detail?.error || `Caption extraction failed (${response.status})`;
+    logCaptionsDebug("captions_extract_response", {
+      endpoint: ENDPOINTS.CAPTIONS_EXTRACT,
+      status: response.status,
+      error: message,
+    });
     return { ok: false, error: { message, statusCode: response.status } };
   }
+
+  logCaptionsDebug("captions_extract_response", {
+    endpoint: ENDPOINTS.CAPTIONS_EXTRACT,
+    status: response.status,
+  });
 
   const data = response.payload || {};
   const normalized = {
@@ -666,7 +699,15 @@ async function fetchKeyboardAnalytics() {
   return { ok: true, data: response.payload || {} };
 }
 
-async function queuedRequest({ requestKey, endpoint, method, body, parseJson, useQueue = true }) {
+async function queuedRequest({
+  requestKey,
+  endpoint,
+  method,
+  body,
+  parseJson,
+  useQueue = true,
+  baseUrl,
+}) {
   if (inflightRequests.has(requestKey)) {
     return inflightRequests.get(requestKey);
   }
@@ -677,6 +718,7 @@ async function queuedRequest({ requestKey, endpoint, method, body, parseJson, us
       method,
       body,
       parseJson,
+      baseUrl,
     });
 
   const wrapped = (useQueue ? networkQueue.enqueue(task) : task()).finally(() => {
@@ -708,7 +750,7 @@ async function queuedImageRequest({ requestKey, endpoint, method, body, parseJso
   return wrapped;
 }
 
-async function requestWithRetry({ endpoint, method, body, parseJson }) {
+async function requestWithRetry({ endpoint, method, body, parseJson, baseUrl }) {
   let attempt = 0;
 
   while (attempt <= REQUEST_POLICY.MAX_RETRIES) {
@@ -717,6 +759,7 @@ async function requestWithRetry({ endpoint, method, body, parseJson }) {
       method,
       body,
       parseJson,
+      baseUrl,
     });
 
     if (!shouldRetry(response.status) || attempt === REQUEST_POLICY.MAX_RETRIES) {
@@ -771,13 +814,13 @@ async function requestWithRetryBounded({
   };
 }
 
-async function performFetch({ endpoint, method, body, parseJson, timeoutMs }) {
+async function performFetch({ endpoint, method, body, parseJson, timeoutMs, baseUrl }) {
   const controller = timeoutMs ? new AbortController() : null;
   const timer = controller
     ? setTimeout(() => controller.abort(), Math.max(0, Number(timeoutMs) || 0))
     : null;
   try {
-    const response = await fetch(toAbsoluteUrl(endpoint), {
+    const response = await fetch(buildRequestUrl(baseUrl, endpoint), {
       method,
       headers: {
         "Content-Type": "application/json",
