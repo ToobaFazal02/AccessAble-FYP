@@ -15,6 +15,7 @@
   const normalizeCues = cueNormalizer.normalizeCues || ((items) => items || []);
   const debugLog = utils.debugLog || (() => {});
   const normalizeUrl = sharedContracts.normalizeUrl || ((value) => String(value || "").trim());
+  const ACTIONS = sharedContracts.ACTIONS || {};
 
   const YOUTUBE_HOSTS = new Set([
     "youtube.com",
@@ -25,6 +26,16 @@
     "youtube-nocookie.com",
     "www.youtube-nocookie.com",
   ]);
+  const HTML_PAYLOAD_MARKERS = [
+    "consent.youtube.com",
+    "consent.google.com",
+    "unusual traffic",
+    "our systems have detected",
+    "enable javascript",
+    "captcha",
+    "g-recaptcha",
+    "challenge",
+  ];
 
   function createYouTubeAdapter() {
     return {
@@ -86,74 +97,110 @@
       return [];
     }
 
-    let jsonParseFailed = false;
     const jsonUrl = withYouTubeFormat(trackUrl, "json3");
-    try {
-      const jsonResponse = await fetchWithRetry(jsonUrl, {
-        method: "GET",
-        signal: options.signal,
-        timeoutMs,
-        retries,
-      });
-      const payload = await jsonResponse.json();
-      const parsedJsonCues = parseJson3Cues(payload, track.lang, track.isAuto);
-      const normalizedJson = normalizeCues(parsedJsonCues, {
-        lang: track.lang,
-        isAuto: track.isAuto,
-      });
-      if (normalizedJson.length > 0) {
-        debugLog(options.debug, "cue_fetch_source", {
-          source: "json3",
-          cueCount: normalizedJson.length,
-          lang: track.lang,
-          isAuto: Boolean(track.isAuto),
-        });
-        return normalizedJson;
-      }
-    } catch (error) {
-      if (error?.name === "SyntaxError") {
-        jsonParseFailed = true;
-      }
-    }
+    let parserErrorCandidate = false;
+    let shouldTryBackground = false;
 
-    const vttUrl = withYouTubeFormat(trackUrl, "vtt");
-    const vttResponse = await fetchWithRetry(vttUrl, {
-      method: "GET",
+    const jsonFetch = await fetchTrackBody(jsonUrl, {
       signal: options.signal,
       timeoutMs,
       retries,
     });
-    const vttContent = await vttResponse.text();
-    let parsedVttCues = [];
-    try {
-      parsedVttCues = parseVttCues(vttContent, track.lang, track.isAuto);
-    } catch (error) {
-      const parseError = new Error(error?.message || "Caption parsing failed");
-      parseError.code = "parser_error";
-      throw parseError;
+    if (!jsonFetch.ok) {
+      shouldTryBackground = true;
+    } else if (isHtmlPayload(jsonFetch.contentType, jsonFetch.body)) {
+      shouldTryBackground = true;
+    } else {
+      const jsonResult = parseJson3FromBody(jsonFetch.body, track);
+      if (jsonResult.parserError) {
+        parserErrorCandidate = true;
+        shouldTryBackground = true;
+      }
+      if (jsonResult.cues.length > 0) {
+        debugLog(options.debug, "cue_fetch_source", {
+          source: "json3",
+          cueCount: jsonResult.cues.length,
+          lang: track.lang,
+          isAuto: Boolean(track.isAuto),
+        });
+        return jsonResult.cues;
+      }
     }
 
-    const normalizedVtt = normalizeCues(parsedVttCues, {
-      lang: track.lang,
-      isAuto: track.isAuto,
+    const vttUrl = withYouTubeFormat(trackUrl, "vtt");
+    const vttFetch = await fetchTrackBody(vttUrl, {
+      signal: options.signal,
+      timeoutMs,
+      retries,
     });
-    if (normalizedVtt.length > 0) {
-      debugLog(options.debug, "cue_fetch_source", {
-        source: "vtt",
-        cueCount: normalizedVtt.length,
-        lang: track.lang,
-        isAuto: Boolean(track.isAuto),
-      });
-      return normalizedVtt;
+    if (!vttFetch.ok) {
+      shouldTryBackground = true;
+    } else if (isHtmlPayload(vttFetch.contentType, vttFetch.body)) {
+      shouldTryBackground = true;
+    } else {
+      const vttResult = parseVttFromBody(vttFetch.body, track);
+      if (vttResult.parserError) {
+        parserErrorCandidate = true;
+        shouldTryBackground = true;
+      }
+      if (vttResult.cues.length > 0) {
+        debugLog(options.debug, "cue_fetch_source", {
+          source: "vtt",
+          cueCount: vttResult.cues.length,
+          lang: track.lang,
+          isAuto: Boolean(track.isAuto),
+        });
+        return vttResult.cues;
+      }
     }
 
-    if (jsonParseFailed) {
+    if (shouldTryBackground) {
+      const fallback = await fetchTrackContentFromBackground(vttUrl, options.signal);
+      if (fallback?.ok) {
+        if (isHtmlPayload(fallback.contentType, fallback.body)) {
+          return [];
+        }
+        const fallbackVtt = parseVttFromBody(fallback.body, track);
+        if (fallbackVtt.cues.length > 0) {
+          debugLog(options.debug, "cue_fetch_source", {
+            source: "background",
+            cueCount: fallbackVtt.cues.length,
+            lang: track.lang,
+            isAuto: Boolean(track.isAuto),
+          });
+          return fallbackVtt.cues;
+        }
+        if (fallbackVtt.parserError) {
+          parserErrorCandidate = true;
+        }
+
+        const fallbackJson = parseJson3FromBody(fallback.body, track);
+        if (fallbackJson.cues.length > 0) {
+          debugLog(options.debug, "cue_fetch_source", {
+            source: "background_json3",
+            cueCount: fallbackJson.cues.length,
+            lang: track.lang,
+            isAuto: Boolean(track.isAuto),
+          });
+          return fallbackJson.cues;
+        }
+        if (fallbackJson.parserError) {
+          parserErrorCandidate = true;
+        }
+      } else if (fallback?.error) {
+        const backendError = new Error(fallback.error || "Caption backend unavailable");
+        backendError.code = "backend_unreachable";
+        throw backendError;
+      }
+    }
+
+    if (parserErrorCandidate) {
       const parseError = new Error("Caption parsing failed");
       parseError.code = "parser_error";
       throw parseError;
     }
 
-    return normalizedVtt;
+    return [];
   }
 
   function bindTimeSource(context, onTime) {
@@ -327,6 +374,103 @@
     return result;
   }
 
+  function parseJson3FromBody(body, track) {
+    const text = String(body || "").trim();
+    if (!looksLikeJson(text)) {
+      return { cues: [], parserError: false };
+    }
+
+    try {
+      const payload = JSON.parse(text);
+      const parsed = parseJson3Cues(payload, track.lang, track.isAuto);
+      return {
+        cues: normalizeCues(parsed, {
+          lang: track.lang,
+          isAuto: track.isAuto,
+        }),
+        parserError: false,
+      };
+    } catch (_) {
+      return { cues: [], parserError: true };
+    }
+  }
+
+  function parseVttFromBody(body, track) {
+    const text = String(body || "");
+    let parsed = [];
+    let parserError = false;
+
+    try {
+      parsed = parseVttCues(text, track.lang, track.isAuto);
+    } catch (_) {
+      parserError = true;
+    }
+
+    const normalized = normalizeCues(parsed, {
+      lang: track.lang,
+      isAuto: track.isAuto,
+    });
+
+    if (looksLikeVtt(text) && normalized.length === 0) {
+      parserError = true;
+    }
+
+    return { cues: normalized, parserError };
+  }
+
+  function isHtmlPayload(contentType, body) {
+    const type = String(contentType || "").toLowerCase();
+    if (type.includes("text/html")) {
+      return true;
+    }
+
+    const text = String(body || "").trim().toLowerCase();
+    if (!text) {
+      return false;
+    }
+    if (text.startsWith("<!doctype") || text.startsWith("<html") || text.startsWith("<head")) {
+      return true;
+    }
+    return HTML_PAYLOAD_MARKERS.some((marker) => text.includes(marker));
+  }
+
+  function looksLikeVtt(body) {
+    const text = String(body || "").trim();
+    return text.toUpperCase().startsWith("WEBVTT");
+  }
+
+  function looksLikeJson(body) {
+    const text = String(body || "").trim();
+    return text.startsWith("{") || text.startsWith("[");
+  }
+
+  async function fetchTrackBody(url, options = {}) {
+    try {
+      const response = await fetchWithRetry(url, {
+        method: "GET",
+        signal: options.signal,
+        timeoutMs: options.timeoutMs,
+        retries: options.retries,
+      });
+      const contentType = response.headers?.get?.("content-type") || "";
+      const body = await response.text();
+      return {
+        ok: true,
+        status: response.status,
+        contentType,
+        body,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        status: 0,
+        contentType: "",
+        body: "",
+        error: error?.message || "Request failed",
+      };
+    }
+  }
+
   function withYouTubeFormat(url, format) {
     try {
       const parsed = new URL(url);
@@ -445,6 +589,39 @@
         resolve(response);
       });
     });
+  }
+
+  async function fetchTrackContentFromBackground(url, signal) {
+    const action = ACTIONS.CAPTIONS_FETCH_TRACK_CONTENT || "captions.fetchTrackContent";
+    if (!action || !globalThis.chrome?.runtime?.sendMessage) {
+      return null;
+    }
+
+    if (signal?.aborted) {
+      throw createAbortError();
+    }
+
+    try {
+      const response = await sendRuntimeMessage({
+        action,
+        payload: { url },
+      });
+      const data = response?.data || {};
+      return {
+        ok: Boolean(response?.ok),
+        status: Number(data.status || 0),
+        contentType: String(data.contentType || ""),
+        body: String(data.body || ""),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        status: 0,
+        contentType: "",
+        body: "",
+        error: error?.message || "Caption fallback failed",
+      };
+    }
   }
 
   function createAbortError() {

@@ -20,6 +20,43 @@ function mockChromeRuntime(responseFactory) {
   };
 }
 
+function createMockFetch(responsesByUrl) {
+  return async (url) => {
+    const response = responsesByUrl[url];
+    if (!response) {
+      throw new Error(`Unexpected fetch for ${url}`);
+    }
+    return {
+      ok: response.ok !== false,
+      status: response.status || 200,
+      headers: {
+        get: (name) =>
+          name && name.toLowerCase() === "content-type" ? response.contentType || "" : null,
+      },
+      text: async () => String(response.body || ""),
+      json: async () => JSON.parse(String(response.body || "")),
+    };
+  };
+}
+
+function mockRuntimeWithHandlers(handlers) {
+  globalThis.chrome = {
+    runtime: {
+      lastError: null,
+      sendMessage: (message, callback) => {
+        const handler = handlers[message.action];
+        const response = handler ? handler(message) : { ok: false, error: { message: "No handler" } };
+        callback(response);
+      },
+    },
+  };
+}
+
+test.afterEach(() => {
+  delete globalThis.fetch;
+  delete globalThis.chrome;
+});
+
 test("youtube adapter falls back to backend when player response has no tracks", async () => {
   globalThis.ytInitialPlayerResponse = {
     captions: { playerCaptionsTracklistRenderer: { captionTracks: [] } },
@@ -114,4 +151,107 @@ test("youtube adapter prefers pageUrl over blob mediaUrl for backend fallback", 
 
   assert.ok(lastMessage);
   assert.equal(lastMessage.payload.videoUrl, "https://www.youtube.com/watch?v=blobpref");
+});
+
+test("youtube adapter treats html payloads as non-caption content", async () => {
+  globalThis.fetch = createMockFetch({
+    "https://www.youtube.com/api/timedtext?fmt=json3": {
+      contentType: "text/html; charset=UTF-8",
+      body: "<!doctype html><html>Consent</html>",
+    },
+    "https://www.youtube.com/api/timedtext?fmt=vtt": {
+      contentType: "text/html; charset=UTF-8",
+      body: "<html>Blocked</html>",
+    },
+  });
+
+  mockRuntimeWithHandlers({
+    "captions.fetchTrackContent": () => ({
+      ok: true,
+      data: {
+        status: 200,
+        contentType: "text/html; charset=UTF-8",
+        body: "<html>Blocked</html>",
+      },
+    }),
+  });
+
+  const adapter = createYouTubeAdapter();
+  const cues = await adapter.fetchCues(
+    { src: "https://www.youtube.com/api/timedtext", lang: "en", isAuto: false },
+    {},
+    { timeoutMs: 1000, retries: 0 }
+  );
+
+  assert.deepEqual(cues, []);
+});
+
+test("youtube adapter falls back to background fetch when direct payload is html", async () => {
+  globalThis.fetch = createMockFetch({
+    "https://www.youtube.com/api/timedtext?fmt=json3": {
+      contentType: "text/html; charset=UTF-8",
+      body: "<!doctype html><html>Consent</html>",
+    },
+    "https://www.youtube.com/api/timedtext?fmt=vtt": {
+      contentType: "text/html; charset=UTF-8",
+      body: "<html>Blocked</html>",
+    },
+  });
+
+  mockRuntimeWithHandlers({
+    "captions.fetchTrackContent": () => ({
+      ok: true,
+      data: {
+        status: 200,
+        contentType: "text/vtt",
+        body: "WEBVTT\n\n00:00.000 -->00:01.000\nHello",
+      },
+    }),
+  });
+
+  const adapter = createYouTubeAdapter();
+  const cues = await adapter.fetchCues(
+    { src: "https://www.youtube.com/api/timedtext", lang: "en", isAuto: false },
+    {},
+    { timeoutMs: 1000, retries: 0 }
+  );
+
+  assert.equal(cues.length, 1);
+  assert.equal(cues[0].text, "Hello");
+});
+
+test("youtube adapter returns parser_error only for malformed caption payloads", async () => {
+  globalThis.fetch = createMockFetch({
+    "https://www.youtube.com/api/timedtext?fmt=json3": {
+      contentType: "application/json",
+      body: "{\"events\":[]}",
+    },
+    "https://www.youtube.com/api/timedtext?fmt=vtt": {
+      contentType: "text/vtt",
+      body: "WEBVTT\n\nBAD",
+    },
+  });
+
+  mockRuntimeWithHandlers({
+    "captions.fetchTrackContent": () => ({
+      ok: true,
+      data: {
+        status: 200,
+        contentType: "text/vtt",
+        body: "WEBVTT\n\nBAD",
+      },
+    }),
+  });
+
+  const adapter = createYouTubeAdapter();
+  try {
+    await adapter.fetchCues(
+      { src: "https://www.youtube.com/api/timedtext", lang: "en", isAuto: false },
+      {},
+      { timeoutMs: 1000, retries: 0 }
+    );
+    assert.fail("Expected parser_error");
+  } catch (error) {
+    assert.equal(error.code, "parser_error");
+  }
 });

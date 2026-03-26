@@ -311,6 +311,9 @@ async function routeMessage(request, sender) {
     case ACTIONS.CAPTIONS_EXTRACT:
       return extractCaptions(request?.payload || {});
 
+    case ACTIONS.CAPTIONS_FETCH_TRACK_CONTENT:
+      return fetchCaptionTrackContent(request?.payload || {});
+
     case ACTIONS.CAPTIONS_ASSIST_SIMPLIFY:
     case ACTIONS.CAPTIONS_ASSIST_TRANSLATE:
     case ACTIONS.CAPTIONS_ASSIST_SUMMARIZE:
@@ -571,6 +574,35 @@ async function extractCaptions(payload) {
 
   await writeCache(cacheKey, normalized);
   return { ok: true, data: { ...normalized, fromCache: false } };
+}
+
+async function fetchCaptionTrackContent(payload) {
+  const url = String(payload?.url || "").trim();
+  if (!isSafeCaptionFetchUrl(url)) {
+    return { ok: false, error: { message: "Invalid caption URL" } };
+  }
+
+  const response = await fetchExternalText(url, REQUEST_POLICY.CAPTIONS_FETCH_TIMEOUT_MS);
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: { message: response.error || `Caption fetch failed (${response.status})` },
+      data: {
+        status: response.status,
+        contentType: response.contentType,
+        body: response.body,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      status: response.status,
+      contentType: response.contentType,
+      body: response.body,
+    },
+  };
 }
 
 async function assistCaptions(payload, action) {
@@ -922,6 +954,64 @@ function parseRetryAfterHeader(value) {
   }
 
   return Math.max(0, asDate - Date.now());
+}
+
+function isSafeCaptionFetchUrl(rawUrl) {
+  try {
+    const parsed = new URL(String(rawUrl || ""));
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return false;
+    }
+
+    const host = parsed.hostname.toLowerCase();
+    return host.endsWith("youtube.com") || host.endsWith("youtube-nocookie.com");
+  } catch (_) {
+    return false;
+  }
+}
+
+async function fetchExternalText(url, timeoutMs) {
+  const controller = timeoutMs ? new AbortController() : null;
+  const timer = controller
+    ? setTimeout(() => controller.abort(), Math.max(0, Number(timeoutMs) || 0))
+    : null;
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "text/vtt, application/json, text/plain, */*",
+      },
+      signal: controller?.signal,
+    });
+
+    let body = "";
+    try {
+      body = await response.text();
+    } catch (_) {
+      body = "";
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      contentType: response.headers.get("content-type") || "",
+      body,
+      error: null,
+    };
+  } catch (error) {
+    const isTimeout = controller?.signal?.aborted;
+    return {
+      ok: false,
+      status: 598,
+      contentType: "",
+      body: "",
+      error: isTimeout ? "Request timed out" : error?.message || "Network failure",
+    };
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
 }
 
 function clampInteger(value, min, max, fallback) {

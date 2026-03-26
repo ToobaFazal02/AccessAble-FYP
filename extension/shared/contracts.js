@@ -11,6 +11,7 @@
     IMAGE_ANALYZE_SINGLE: "image.analyzeSingle",
 
     CAPTIONS_EXTRACT: "captions.extract",
+    CAPTIONS_FETCH_TRACK_CONTENT: "captions.fetchTrackContent",
     CAPTIONS_ASSIST_SIMPLIFY: "captions.assistSimplify",
     CAPTIONS_ASSIST_TRANSLATE: "captions.assistTranslate",
     CAPTIONS_ASSIST_SUMMARIZE: "captions.assistSummarize",
