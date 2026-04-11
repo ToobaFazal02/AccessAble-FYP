@@ -104,6 +104,9 @@
 
   function ensureLandmarks() {
     const hasMain = document.querySelector("main, [role='main']") !== null;
+    const hasBanner = document.querySelector("[role='banner']") !== null;
+    const hasNav = document.querySelector("[role='navigation']") !== null;
+    const hasContentInfo = document.querySelector("[role='contentinfo']") !== null;
     let applied = false;
 
     if (!hasMain && document.body) {
@@ -112,19 +115,20 @@
     }
 
     const header = document.querySelector("header");
-    if (header && !header.getAttribute("role")) {
+    if (header && !hasBanner && !header.getAttribute("role") &&
+        !header.closest("main, article, section")) {
       header.setAttribute("role", "banner");
       applied = true;
     }
 
     const nav = document.querySelector("nav");
-    if (nav && !nav.getAttribute("role")) {
+    if (nav && !hasNav && !nav.getAttribute("role")) {
       nav.setAttribute("role", "navigation");
       applied = true;
     }
 
     const footer = document.querySelector("footer");
-    if (footer && !footer.getAttribute("role")) {
+    if (footer && !hasContentInfo && !footer.getAttribute("role")) {
       footer.setAttribute("role", "contentinfo");
       applied = true;
     }

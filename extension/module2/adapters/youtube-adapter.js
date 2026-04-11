@@ -96,6 +96,11 @@
     if (!isSafeCaptionUrl(trackUrl)) {
       return [];
     }
+    debugLog(options.debug, "cue_fetch_start", {
+      url: trackUrl,
+      lang: track?.lang || "",
+      isAuto: Boolean(track?.isAuto),
+    });
 
     const jsonUrl = withYouTubeFormat(trackUrl, "json3");
     let parserErrorCandidate = false;
@@ -106,24 +111,43 @@
       timeoutMs,
       retries,
     });
+    debugLog(options.debug, "cue_fetch_response", {
+      format: "json3",
+      ok: jsonFetch.ok,
+      status: jsonFetch.status,
+      contentType: jsonFetch.contentType,
+    });
     if (!jsonFetch.ok) {
       shouldTryBackground = true;
-    } else if (isHtmlPayload(jsonFetch.contentType, jsonFetch.body)) {
-      shouldTryBackground = true;
     } else {
-      const jsonResult = parseJson3FromBody(jsonFetch.body, track);
-      if (jsonResult.parserError) {
-        parserErrorCandidate = true;
+      const jsonIsHtml = isHtmlPayload(jsonFetch.contentType, jsonFetch.body);
+      debugLog(options.debug, "cue_fetch_html_detected", {
+        format: "json3",
+        isHtml: jsonIsHtml,
+      });
+      if (jsonIsHtml) {
         shouldTryBackground = true;
-      }
-      if (jsonResult.cues.length > 0) {
-        debugLog(options.debug, "cue_fetch_source", {
-          source: "json3",
+      } else {
+        debugLog(options.debug, "cue_parse_attempt", { format: "json3" });
+        const jsonResult = parseJson3FromBody(jsonFetch.body, track);
+        debugLog(options.debug, "cue_parse_result", {
+          format: "json3",
           cueCount: jsonResult.cues.length,
-          lang: track.lang,
-          isAuto: Boolean(track.isAuto),
+          parserError: jsonResult.parserError,
         });
-        return jsonResult.cues;
+        if (jsonResult.parserError) {
+          parserErrorCandidate = true;
+          shouldTryBackground = true;
+        }
+        if (jsonResult.cues.length > 0) {
+          debugLog(options.debug, "cue_fetch_source", {
+            source: "json3",
+            cueCount: jsonResult.cues.length,
+            lang: track.lang,
+            isAuto: Boolean(track.isAuto),
+          });
+          return jsonResult.cues;
+        }
       }
     }
 
@@ -133,34 +157,76 @@
       timeoutMs,
       retries,
     });
+    debugLog(options.debug, "cue_fetch_response", {
+      format: "vtt",
+      ok: vttFetch.ok,
+      status: vttFetch.status,
+      contentType: vttFetch.contentType,
+    });
     if (!vttFetch.ok) {
       shouldTryBackground = true;
-    } else if (isHtmlPayload(vttFetch.contentType, vttFetch.body)) {
-      shouldTryBackground = true;
     } else {
-      const vttResult = parseVttFromBody(vttFetch.body, track);
-      if (vttResult.parserError) {
-        parserErrorCandidate = true;
+      const vttIsHtml = isHtmlPayload(vttFetch.contentType, vttFetch.body);
+      debugLog(options.debug, "cue_fetch_html_detected", {
+        format: "vtt",
+        isHtml: vttIsHtml,
+      });
+      if (vttIsHtml) {
         shouldTryBackground = true;
-      }
-      if (vttResult.cues.length > 0) {
-        debugLog(options.debug, "cue_fetch_source", {
+      } else {
+        debugLog(options.debug, "cue_parse_attempt", { format: "vtt" });
+        const vttResult = parseVttFromBody(vttFetch.body, track, {
+          debug: options.debug,
           source: "vtt",
-          cueCount: vttResult.cues.length,
-          lang: track.lang,
-          isAuto: Boolean(track.isAuto),
         });
-        return vttResult.cues;
+        debugLog(options.debug, "cue_parse_result", {
+          format: "vtt",
+          cueCount: vttResult.cues.length,
+          parserError: vttResult.parserError,
+        });
+        if (vttResult.parserError) {
+          parserErrorCandidate = true;
+          shouldTryBackground = true;
+        }
+        if (vttResult.cues.length > 0) {
+          debugLog(options.debug, "cue_fetch_source", {
+            source: "vtt",
+            cueCount: vttResult.cues.length,
+            lang: track.lang,
+            isAuto: Boolean(track.isAuto),
+          });
+          return vttResult.cues;
+        }
       }
     }
 
     if (shouldTryBackground) {
       const fallback = await fetchTrackContentFromBackground(vttUrl, options.signal);
+      debugLog(options.debug, "cue_fetch_response", {
+        format: "background",
+        ok: Boolean(fallback?.ok),
+        status: Number(fallback?.status || 0),
+        contentType: fallback?.contentType || "",
+      });
       if (fallback?.ok) {
-        if (isHtmlPayload(fallback.contentType, fallback.body)) {
+        const fallbackIsHtml = isHtmlPayload(fallback.contentType, fallback.body);
+        debugLog(options.debug, "cue_fetch_html_detected", {
+          format: "background",
+          isHtml: fallbackIsHtml,
+        });
+        if (fallbackIsHtml) {
           return [];
         }
-        const fallbackVtt = parseVttFromBody(fallback.body, track);
+        debugLog(options.debug, "cue_parse_attempt", { format: "background_vtt" });
+        const fallbackVtt = parseVttFromBody(fallback.body, track, {
+          debug: options.debug,
+          source: "background_vtt",
+        });
+        debugLog(options.debug, "cue_parse_result", {
+          format: "background_vtt",
+          cueCount: fallbackVtt.cues.length,
+          parserError: fallbackVtt.parserError,
+        });
         if (fallbackVtt.cues.length > 0) {
           debugLog(options.debug, "cue_fetch_source", {
             source: "background",
@@ -174,7 +240,13 @@
           parserErrorCandidate = true;
         }
 
+        debugLog(options.debug, "cue_parse_attempt", { format: "background_json3" });
         const fallbackJson = parseJson3FromBody(fallback.body, track);
+        debugLog(options.debug, "cue_parse_result", {
+          format: "background_json3",
+          cueCount: fallbackJson.cues.length,
+          parserError: fallbackJson.parserError,
+        });
         if (fallbackJson.cues.length > 0) {
           debugLog(options.debug, "cue_fetch_source", {
             source: "background_json3",
@@ -285,10 +357,15 @@
       return [];
     }
 
-    const mediaUrl = selectBackendVideoUrl(context);
-    if (!mediaUrl) {
+    const candidateUrl = selectBackendVideoUrl(context);
+    const canonical = canonicalizeYouTubeVideoUrl(candidateUrl, context);
+    if (!canonical.ok) {
+      debugLog(debug, "backend_video_url_invalid", {
+        reason: canonical.reason || "invalid_video_url",
+      });
       return [];
     }
+    const mediaUrl = canonical.url;
 
     if (signal?.aborted) {
       throw createAbortError();
@@ -395,13 +472,16 @@
     }
   }
 
-  function parseVttFromBody(body, track) {
+  function parseVttFromBody(body, track, options = {}) {
     const text = String(body || "");
     let parsed = [];
     let parserError = false;
 
     try {
-      parsed = parseVttCues(text, track.lang, track.isAuto);
+      parsed = parseVttCues(text, track.lang, track.isAuto, {
+        debug: Boolean(options.debug),
+        source: options.source || "vtt",
+      });
     } catch (_) {
       parserError = true;
     }
@@ -573,6 +653,155 @@
     }
 
     return "";
+  }
+
+  function canonicalizeYouTubeVideoUrl(inputUrl, pageContext) {
+    const primaryUrls = [];
+    const fallbackUrl = normalizeUrl(pageContext?.pageUrl || "");
+    const mediaUrl = normalizeUrl(pageContext?.mediaUrl || "");
+
+    addUniqueUrl(primaryUrls, normalizeUrl(inputUrl));
+    addUniqueUrl(primaryUrls, mediaUrl);
+
+    const watchId = findVideoId(primaryUrls, parseWatchVideoId);
+    if (watchId) {
+      return buildCanonicalResult(watchId);
+    }
+
+    const youtuId = findVideoId(primaryUrls, parseYoutuBeVideoId);
+    if (youtuId) {
+      return buildCanonicalResult(youtuId);
+    }
+
+    const shortId = findVideoId(primaryUrls, parseShortsVideoId);
+    if (shortId) {
+      return buildCanonicalResult(shortId);
+    }
+
+    const playerId = extractVideoIdFromPlayerResponse();
+    if (playerId) {
+      return buildCanonicalResult(playerId);
+    }
+
+    if (fallbackUrl) {
+      const fallbackWatch = parseWatchVideoId(fallbackUrl);
+      if (fallbackWatch) {
+        return buildCanonicalResult(fallbackWatch);
+      }
+      const fallbackShort = parseShortsVideoId(fallbackUrl);
+      if (fallbackShort) {
+        return buildCanonicalResult(fallbackShort);
+      }
+      const fallbackYoutu = parseYoutuBeVideoId(fallbackUrl);
+      if (fallbackYoutu) {
+        return buildCanonicalResult(fallbackYoutu);
+      }
+    }
+
+    return { ok: false, reason: "no_video_id" };
+  }
+
+  function addUniqueUrl(list, url) {
+    if (!url) {
+      return;
+    }
+    if (!list.includes(url)) {
+      list.push(url);
+    }
+  }
+
+  function findVideoId(urls, parser) {
+    for (const url of urls) {
+      const id = parser(url);
+      if (id) {
+        return id;
+      }
+    }
+    return "";
+  }
+
+  function buildCanonicalResult(videoId) {
+    return {
+      ok: true,
+      videoId,
+      url: `https://www.youtube.com/watch?v=${videoId}`,
+    };
+  }
+
+  function parseWatchVideoId(url) {
+    const parsed = safeParseUrl(url);
+    if (!parsed || isRejectedYouTubePath(parsed)) {
+      return "";
+    }
+    const host = normalizeHost(parsed.hostname);
+    if (!YOUTUBE_HOSTS.has(host)) {
+      return "";
+    }
+    if (parsed.pathname !== "/watch") {
+      return "";
+    }
+    const videoId = parsed.searchParams.get("v");
+    return isValidYouTubeVideoId(videoId) ? videoId : "";
+  }
+
+  function parseYoutuBeVideoId(url) {
+    const parsed = safeParseUrl(url);
+    if (!parsed || isRejectedYouTubePath(parsed)) {
+      return "";
+    }
+    const host = normalizeHost(parsed.hostname);
+    if (host !== "youtu.be" && host !== "www.youtu.be") {
+      return "";
+    }
+    const id = parsed.pathname.replace(/^\//, "").split("/")[0];
+    return isValidYouTubeVideoId(id) ? id : "";
+  }
+
+  function parseShortsVideoId(url) {
+    const parsed = safeParseUrl(url);
+    if (!parsed || isRejectedYouTubePath(parsed)) {
+      return "";
+    }
+    const host = normalizeHost(parsed.hostname);
+    if (!YOUTUBE_HOSTS.has(host)) {
+      return "";
+    }
+    if (!parsed.pathname.startsWith("/shorts/")) {
+      return "";
+    }
+    const id = parsed.pathname.split("/shorts/")[1]?.split("/")[0] || "";
+    return isValidYouTubeVideoId(id) ? id : "";
+  }
+
+  function extractVideoIdFromPlayerResponse() {
+    const playerResponse = getPlayerResponse();
+    const id = playerResponse?.videoDetails?.videoId;
+    return isValidYouTubeVideoId(id) ? id : "";
+  }
+
+  function isRejectedYouTubePath(parsedUrl) {
+    const host = normalizeHost(parsedUrl.hostname);
+    if (host === "accounts.youtube.com") {
+      return true;
+    }
+    if (!host.endsWith("youtube.com")) {
+      return false;
+    }
+    const path = String(parsedUrl.pathname || "").toLowerCase();
+    return path.startsWith("/playlist") || path.startsWith("/results");
+  }
+
+  function isValidYouTubeVideoId(value) {
+    const id = String(value || "").trim();
+    return /^[a-zA-Z0-9_-]{11}$/.test(id);
+  }
+
+  function safeParseUrl(value) {
+    try {
+      return new URL(String(value || ""));
+    } catch (_) {
+      return null;
+    }
   }
 
   function sendRuntimeMessage(message) {

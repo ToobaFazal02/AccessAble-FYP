@@ -55,6 +55,8 @@ function mockRuntimeWithHandlers(handlers) {
 test.afterEach(() => {
   delete globalThis.fetch;
   delete globalThis.chrome;
+  delete globalThis.ytInitialPlayerResponse;
+  delete globalThis.ytplayer;
 });
 
 test("youtube adapter falls back to backend when player response has no tracks", async () => {
@@ -81,7 +83,7 @@ test("youtube adapter falls back to backend when player response has no tracks",
     {
       videoElement: null,
       mediaUrl: "",
-      pageUrl: "https://www.youtube.com/watch?v=abc",
+      pageUrl: "https://www.youtube.com/watch?v=8r7kHT4K1pA",
       host: "www.youtube.com",
     },
     { debug: false }
@@ -114,7 +116,7 @@ test("youtube adapter uses backend when player response is unavailable", async (
     {
       videoElement: null,
       mediaUrl: "",
-      pageUrl: "https://www.youtube.com/watch?v=xyz",
+      pageUrl: "https://www.youtube.com/watch?v=8r7kHT4K1pA",
       host: "www.youtube.com",
     },
     { debug: false }
@@ -143,14 +145,14 @@ test("youtube adapter prefers pageUrl over blob mediaUrl for backend fallback", 
     {
       videoElement: null,
       mediaUrl: "blob:https://www.youtube.com/12345",
-      pageUrl: "https://www.youtube.com/watch?v=blobpref",
+      pageUrl: "https://www.youtube.com/watch?v=8r7kHT4K1pA",
       host: "www.youtube.com",
     },
     { debug: false }
   );
 
   assert.ok(lastMessage);
-  assert.equal(lastMessage.payload.videoUrl, "https://www.youtube.com/watch?v=blobpref");
+  assert.equal(lastMessage.payload.videoUrl, "https://www.youtube.com/watch?v=8r7kHT4K1pA");
 });
 
 test("youtube adapter treats html payloads as non-caption content", async () => {
@@ -254,4 +256,130 @@ test("youtube adapter returns parser_error only for malformed caption payloads",
   } catch (error) {
     assert.equal(error.code, "parser_error");
   }
+});
+
+test("youtube adapter skips backend for accounts youtube urls", async () => {
+  globalThis.ytInitialPlayerResponse = null;
+  globalThis.ytplayer = null;
+
+  let called = false;
+  mockChromeRuntime(() => {
+    called = true;
+    return { ok: true, data: { caption_tracks: [] } };
+  });
+
+  const adapter = createYouTubeAdapter();
+  const tracks = await adapter.discoverTracks(
+    {
+      videoElement: null,
+      mediaUrl: "",
+      pageUrl: "https://accounts.youtube.com/RotateCookiesPage",
+      host: "accounts.youtube.com",
+    },
+    { debug: false }
+  );
+
+  assert.equal(tracks.length, 0);
+  assert.equal(called, false);
+});
+
+test("youtube adapter skips backend for playlist urls", async () => {
+  globalThis.ytInitialPlayerResponse = null;
+  globalThis.ytplayer = null;
+
+  let called = false;
+  mockChromeRuntime(() => {
+    called = true;
+    return { ok: true, data: { caption_tracks: [] } };
+  });
+
+  const adapter = createYouTubeAdapter();
+  const tracks = await adapter.discoverTracks(
+    {
+      videoElement: null,
+      mediaUrl: "",
+      pageUrl: "https://www.youtube.com/playlist?list=PLxCzCOWd7aiHUUi6ZlansKbDw_cXut0El",
+      host: "www.youtube.com",
+    },
+    { debug: false }
+  );
+
+  assert.equal(tracks.length, 0);
+  assert.equal(called, false);
+});
+
+test("youtube adapter canonicalizes watch urls with list params", async () => {
+  globalThis.ytInitialPlayerResponse = null;
+  globalThis.ytplayer = null;
+
+  let lastMessage = null;
+  mockChromeRuntime((message) => {
+    lastMessage = message;
+    return { ok: true, data: { caption_tracks: [] } };
+  });
+
+  const adapter = createYouTubeAdapter();
+  await adapter.discoverTracks(
+    {
+      videoElement: null,
+      mediaUrl: "",
+      pageUrl:
+        "https://www.youtube.com/watch?v=8r7kHT4K1pA&list=PLxCzCOWd7aiHUUi6ZlansKbDw_cXut0El&index=5",
+      host: "www.youtube.com",
+    },
+    { debug: false }
+  );
+
+  assert.ok(lastMessage);
+  assert.equal(lastMessage.payload.videoUrl, "https://www.youtube.com/watch?v=8r7kHT4K1pA");
+});
+
+test("youtube adapter canonicalizes shorts urls", async () => {
+  globalThis.ytInitialPlayerResponse = null;
+  globalThis.ytplayer = null;
+
+  let lastMessage = null;
+  mockChromeRuntime((message) => {
+    lastMessage = message;
+    return { ok: true, data: { caption_tracks: [] } };
+  });
+
+  const adapter = createYouTubeAdapter();
+  await adapter.discoverTracks(
+    {
+      videoElement: null,
+      mediaUrl: "",
+      pageUrl: "https://www.youtube.com/shorts/8r7kHT4K1pA",
+      host: "www.youtube.com",
+    },
+    { debug: false }
+  );
+
+  assert.ok(lastMessage);
+  assert.equal(lastMessage.payload.videoUrl, "https://www.youtube.com/watch?v=8r7kHT4K1pA");
+});
+
+test("youtube adapter sends canonical watch url for youtu.be input", async () => {
+  globalThis.ytInitialPlayerResponse = null;
+  globalThis.ytplayer = null;
+
+  let lastMessage = null;
+  mockChromeRuntime((message) => {
+    lastMessage = message;
+    return { ok: true, data: { caption_tracks: [] } };
+  });
+
+  const adapter = createYouTubeAdapter();
+  await adapter.discoverTracks(
+    {
+      videoElement: null,
+      mediaUrl: "https://youtu.be/8r7kHT4K1pA",
+      pageUrl: "https://www.youtube.com/playlist?list=PLxCzCOWd7aiHUUi6ZlansKbDw_cXut0El",
+      host: "www.youtube.com",
+    },
+    { debug: false }
+  );
+
+  assert.ok(lastMessage);
+  assert.equal(lastMessage.payload.videoUrl, "https://www.youtube.com/watch?v=8r7kHT4K1pA");
 });

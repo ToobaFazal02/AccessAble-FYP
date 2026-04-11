@@ -145,10 +145,12 @@
     return hours * 3600 + minutes * 60 + seconds;
   }
 
-  function parseVttCues(vttContent, language, isAuto) {
+  function parseVttCues(vttContent, language, isAuto, options = {}) {
     const text = String(vttContent || "");
     const lines = text.replace(/\r\n/g, "\n").split("\n");
     const cues = [];
+    const debug = options?.debug === true;
+    const source = String(options?.source || "vtt");
 
     let index = 0;
     while (index < lines.length) {
@@ -165,8 +167,8 @@
       }
 
       const [rawStart, rawEndWithSettings] = timingLine.split("-->");
-      const rawEnd = String(rawEndWithSettings || "").split(" ")[0];
-      const start = parseVttTimestamp(rawStart);
+      const rawEnd = String(rawEndWithSettings || "").trim().split(/\s+/)[0];
+      const start = parseVttTimestamp(String(rawStart || "").trim());
       const end = parseVttTimestamp(rawEnd);
       index += line.includes("-->") ? 1 : 2;
 
@@ -192,6 +194,11 @@
 
       index += 1;
     }
+
+    debugLog(debug, "vtt_parse_summary", {
+      source,
+      cueCount: cues.length,
+    });
 
     return cues;
   }

@@ -295,11 +295,19 @@
 
     function safeStatus(payload) {
       try {
-        if (payload?.stage && payload.stage !== state.lastStage) {
+        if (payload?.stage) {
           debugLog(Boolean(state.settings?.debug), "engine_status", {
             from: state.lastStage || "none",
             to: payload.stage,
             reason: payload.reason || "",
+            adapter: payload.adapter || state.adapter?.name || "",
+            available: Boolean(payload.available),
+            cueCount:
+              typeof payload.cueCount === "number"
+                ? payload.cueCount
+                : Array.isArray(state.cues)
+                  ? state.cues.length
+                  : 0,
           });
           state.lastStage = payload.stage;
         }
