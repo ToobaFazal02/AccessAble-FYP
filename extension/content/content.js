@@ -1,477 +1,428 @@
-// ============================================================================
-// MAIN CONTENT SCRIPT - Orchestrates all modules
-// Responsibilities: Screen reader, widget UI, module coordination
-// ============================================================================
+"use strict";
 
-// ============================================================================
-// STATE - Use local variables for runtime state (NOT chrome.storage.sync)
-// ============================================================================
+(() => {
+  const {
+    ACTIONS,
+    STORAGE_KEYS,
+    DEFAULT_SETTINGS,
+    DEFAULT_STATE,
+    isRestrictedChromePage,
+  } = globalThis.AccessAbleContracts;
 
-let isReading = false;
-let isPaused = false;
-let isImageMode = false;
-let currentIndex = 0;
-let readableElements = [];
-let imageClickHandler = null;
-let widget = null;
+  const readerState = {
+    enabled: false,
+    paused: false,
+    currentIndex: 0,
+    elements: [],
+    widget: null,
+    settings: { ...DEFAULT_SETTINGS },
+  };
 
-let speechSettings = {
-  speed: 1,
-  pitch: 1,
-  volume: 1
-};
+  initialize();
 
-console.log('[Content] Script loaded');
+  function initialize() {
+    if (isRestrictedChromePage(window.location.href)) {
+      return;
+    }
 
-// ============================================================================
-// INITIALIZATION
-// ============================================================================
-
-// Load user preferences (these are actual persistent settings)
-chrome.storage.sync.get(['speed', 'pitch', 'volume'], (data) => {
-  if (data.speed) speechSettings.speed = data.speed;
-  if (data.pitch) speechSettings.pitch = data.pitch;
-  if (data.volume !== undefined) speechSettings.volume = data.volume;
-  console.log('[Content] Settings loaded:', speechSettings);
-});
-
-// Initialize Module 1: Image Accessibility Analysis
-document.addEventListener('DOMContentLoaded', () => {
-  if (window.AccessAbleImageModule) {
-    window.AccessAbleImageModule.init();
+    void loadSettings();
+    void restoreState();
+    registerKeyboardShortcuts();
+    registerMessageHandler();
   }
-});
 
-// ============================================================================
-// KEYBOARD SHORTCUTS
-// ============================================================================
-
-document.addEventListener('keydown', (e) => {
-  if (e.altKey && e.key.toLowerCase() === 'r') {
-    e.preventDefault();
-    toggleReader();
-  } else if (e.altKey && e.key.toLowerCase() === 's') {
-    e.preventDefault();
-    pauseResume();
-  } else if (e.altKey && e.key.toLowerCase() === 'n') {
-    e.preventDefault();
-    readNext();
-  } else if (e.altKey && e.key.toLowerCase() === 'p') {
-    e.preventDefault();
-    readPrevious();
+  async function loadSettings() {
+    const stored = await chrome.storage.sync.get([STORAGE_KEYS.SETTINGS]);
+    const settings = Object.assign(
+      {},
+      DEFAULT_SETTINGS,
+      stored[STORAGE_KEYS.SETTINGS] || {}
+    );
+    readerState.settings = settings;
   }
-});
 
-// ============================================================================
-// MESSAGE HANDLER - Commands from background/popup
-// ============================================================================
+  async function restoreState() {
+    const stored = await chrome.storage.sync.get([STORAGE_KEYS.STATE]);
+    const state = Object.assign({}, DEFAULT_STATE, stored[STORAGE_KEYS.STATE] || {});
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('[Content] Message received:', request);
-  
-  switch (request.action) {
-    case 'ping':
-      sendResponse({ status: 'ready' });
-      break;
-    
-    case 'toggleReader':
-      toggleReader();
-      sendResponse({ isReading });
-      break;
-    
-    case 'pauseResume':
-      pauseResume();
-      sendResponse({ isPaused });
-      break;
-    
-    case 'readNext':
-      readNext();
-      sendResponse({ success: true });
-      break;
-    
-    case 'readPrevious':
-      readPrevious();
-      sendResponse({ success: true });
-      break;
-    
-    case 'updateSetting':
-      speechSettings[request.setting] = request.value;
-      sendResponse({ success: true });
-      break;
-    
-    case 'toggleImageMode':
-      toggleImageMode();
-      sendResponse({ isImageMode });
-      break;
-    
-    default:
-      if (request.command) {
-        handleCommand(request.command);
-        sendResponse({ success: true });
+    if (state.imageModuleEnabled) {
+      globalThis.AccessAbleModuleImage?.enable();
+    }
+
+    if (state.keyboardModuleEnabled) {
+      globalThis.AccessAbleModuleKeyboard?.enable();
+    }
+
+    if (state.captionsModuleEnabled) {
+      globalThis.AccessAbleModuleCaptions?.enableHighlights();
+    }
+  }
+
+  function registerKeyboardShortcuts() {
+    document.addEventListener("keydown", (event) => {
+      if (!event.altKey) {
+        return;
       }
+
+      const key = event.key.toLowerCase();
+      if (key === "r") {
+        event.preventDefault();
+        toggleReader();
+      } else if (key === "s") {
+        event.preventDefault();
+        togglePause();
+      } else if (key === "n") {
+        event.preventDefault();
+        readNext();
+      } else if (key === "p") {
+        event.preventDefault();
+        readPrevious();
+      }
+    });
   }
-  
-  return true;
-});
 
-function handleCommand(command) {
-  switch (command) {
-    case 'toggle-reader':
-      toggleReader();
-      break;
-    case 'read-next':
-      readNext();
-      break;
-    case 'read-previous':
-      readPrevious();
-      break;
-    case 'pause-resume':
-      pauseResume();
-      break;
+  function registerMessageHandler() {
+    chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+      void handleMessage(request)
+        .then((response) => sendResponse(response))
+        .catch((error) =>
+          sendResponse({ ok: false, error: error?.message || "Content script error" })
+        );
+      return true;
+    });
   }
-}
 
-// ============================================================================
-// IMAGE MODE (Interactive Click-to-Analyze)
-// NOTE: This is separate from Module 1's automatic analysis
-// ============================================================================
+  async function handleMessage(request) {
+    switch (request?.action) {
+      case ACTIONS.PING:
+        return { ok: true, data: { status: "ready" } };
 
-// ============================================================================
-// IMAGE MODE (UPDATED: Fully Automatic)
-// ============================================================================
+      case ACTIONS.CONTENT_TOGGLE_READER: {
+        const status = toggleReader();
+        return { ok: true, data: status };
+      }
 
-function toggleImageMode() {
-  isImageMode = !isImageMode;
-  
-  if (isImageMode) {
-    if (window.AccessAbleImageModule) {
-      window.AccessAbleImageModule.init(); // Start Auto Scan & Observer
-      speak("Automatic Image Analysis enabled. Scanning page for inaccessible images.");
+      case ACTIONS.CONTENT_PAUSE_READER: {
+        const status = togglePause();
+        return { ok: true, data: status };
+      }
+
+      case ACTIONS.CONTENT_READ_NEXT: {
+        readNext();
+        return { ok: true, data: getReaderStatus() };
+      }
+
+      case ACTIONS.CONTENT_READ_PREVIOUS: {
+        readPrevious();
+        return { ok: true, data: getReaderStatus() };
+      }
+
+      case ACTIONS.CONTENT_UPDATE_SETTING: {
+        const key = request?.payload?.key;
+        const value = request?.payload?.value;
+        if (key && Object.prototype.hasOwnProperty.call(readerState.settings, key)) {
+          readerState.settings[key] = value;
+        }
+        return { ok: true, data: { settings: readerState.settings } };
+      }
+
+      case ACTIONS.CONTENT_TOGGLE_IMAGE_MODULE: {
+        const enabled = Boolean(request?.payload?.enabled);
+        const result = enabled
+          ? globalThis.AccessAbleModuleImage?.enable()
+          : globalThis.AccessAbleModuleImage?.disable();
+        return { ok: true, data: result || { enabled } };
+      }
+
+      case ACTIONS.CONTENT_SCAN_IMAGES_NOW: {
+        const result = await globalThis.AccessAbleModuleImage?.scanNow();
+        return { ok: true, data: result || { scanned: 0, updated: 0 } };
+      }
+
+      case ACTIONS.CONTENT_SCAN_VIDEO_CANDIDATES: {
+        const result = globalThis.AccessAbleModuleCaptions?.scanCandidates() || [];
+        return { ok: true, data: { candidates: result } };
+      }
+
+      case ACTIONS.CONTENT_TOGGLE_CAPTIONS_MODULE: {
+        const enabled = Boolean(request?.payload?.enabled);
+        const result = enabled
+          ? globalThis.AccessAbleModuleCaptions?.enableHighlights()
+          : globalThis.AccessAbleModuleCaptions?.disableHighlights();
+        return { ok: true, data: result || { highlighted: enabled } };
+      }
+
+      case ACTIONS.CONTENT_TOGGLE_KEYBOARD_MODULE: {
+        const enabled = Boolean(request?.payload?.enabled);
+        const result = enabled
+          ? globalThis.AccessAbleModuleKeyboard?.enable()
+          : globalThis.AccessAbleModuleKeyboard?.disable();
+        return { ok: true, data: result || { enabled } };
+      }
+
+      case ACTIONS.CONTENT_GET_KEYBOARD_STATUS: {
+        const result = globalThis.AccessAbleModuleKeyboard?.getStatus() || {
+          enabled: false,
+          fixesApplied: [],
+        };
+        return { ok: true, data: result };
+      }
+
+      default:
+        return { ok: false, error: `Unknown action: ${request?.action || "undefined"}` };
+    }
+  }
+
+  function toggleReader() {
+    if (readerState.enabled) {
+      stopReader();
     } else {
-      console.error("Image Module not loaded!");
+      startReader();
     }
-  } else {
-    // Stop Automatic Module
-    if (window.AccessAbleImageModule) {
-      window.AccessAbleImageModule.stop(); // Remove Red Borders & Observer
-      speak("Image Analysis disabled.");
+    return getReaderStatus();
+  }
+
+  function getReaderStatus() {
+    return {
+      enabled: readerState.enabled,
+      paused: readerState.paused,
+      index: readerState.currentIndex,
+      total: readerState.elements.length,
+    };
+  }
+
+  function startReader() {
+    readerState.elements = collectReadableElements();
+    readerState.currentIndex = 0;
+    readerState.enabled = true;
+    readerState.paused = false;
+
+    if (readerState.elements.length === 0) {
+      speak("No readable content found on this page.");
+      stopReader();
+      return;
     }
+
+    createReaderWidget();
+    updateReaderWidget();
+    readCurrentElement();
   }
-}
 
-// ============================================================================
-// SCREEN READER FUNCTIONS (Your existing logic, preserved)
-// ============================================================================
-
-function toggleReader() {
-  if (isReading) {
-    isReading = false;
-    stopReading();
-    removeWidget();
-  } else {
-    isReading = true;
-    isPaused = false;
-    createWidget();
-    startReading();
+  function stopReader() {
+    readerState.enabled = false;
+    readerState.paused = false;
+    readerState.currentIndex = 0;
+    speechSynthesis.cancel();
+    clearCurrentHighlight();
+    removeReaderWidget();
   }
-}
 
-function pauseResume() {
-  if (!isReading) {
-    speak("Screen reader is not active. Press Alt+R to start.");
-    return;
-  }
-  
-  isPaused = !isPaused;
-  
-  if (isPaused) {
-    window.speechSynthesis.pause();
-    updateWidgetStatus('Paused');
-  } else {
-    window.speechSynthesis.resume();
-    updateWidgetStatus('Reading...');
-  }
-  
-  updateWidgetPauseButton();
-}
-
-function startReading() {
-  readableElements = getReadableElements();
-  currentIndex = 0;
-  updateWidgetStatus('Reading...');
-  
-  if (readableElements.length > 0) {
-    readElement(readableElements[currentIndex]);
-  } else {
-    speak("No readable content found on this page.");
-    isReading = false;
-    removeWidget();
-  }
-}
-
-function stopReading() {
-  window.speechSynthesis.cancel();
-  removeHighlight();
-  currentIndex = 0;
-  isPaused = false;
-}
-
-function readNext() {
-  if (!isReading) {
-    speak("Screen reader is not active.");
-    return;
-  }
-  
-  if (currentIndex < readableElements.length - 1) {
-    window.speechSynthesis.cancel();
-    currentIndex++;
-    isPaused = false;
-    updateWidgetPauseButton();
-    readElement(readableElements[currentIndex]);
-  } else {
-    speak("This is the last element.");
-  }
-}
-
-function readPrevious() {
-  if (!isReading) {
-    speak("Screen reader is not active.");
-    return;
-  }
-  
-  if (currentIndex > 0) {
-    window.speechSynthesis.cancel();
-    currentIndex--;
-    isPaused = false;
-    updateWidgetPauseButton();
-    readElement(readableElements[currentIndex]);
-  } else {
-    speak("This is the first element.");
-  }
-}
-
-// ============================================================================
-// DOM SCANNING (Your existing logic)
-// ============================================================================
-
-function getReadableElements() {
-  const mainContent = findMainContent();
-  return mainContent 
-    ? getElementsFromContainer(mainContent) 
-    : getElementsFromContainer(document.body);
-}
-
-function findMainContent() {
-  const mainSelectors = [
-    'main', '[role="main"]', '#content', '#main-content',
-    '.main-content', 'article', '#mw-content-text', '.mw-parser-output'
-  ];
-  
-  for (const selector of mainSelectors) {
-    const element = document.querySelector(selector);
-    if (element) return element;
-  }
-  
-  return null;
-}
-
-function getElementsFromContainer(container) {
-  const allElements = container.querySelectorAll('h1, h2, h3, h4, h5, h6, p, blockquote');
-  const skipSelectors = [
-    'nav', 'header:not(article header)', 'footer:not(article footer)',
-    '.navigation', '.nav', '.menu', '.sidebar', '.ad', '#toc',
-    '[role="navigation"]', '[role="banner"]', '.mw-editsection'
-  ];
-  
-  const readableElements = [];
-  
-  Array.from(allElements).forEach(el => {
-    const text = el.innerText?.trim();
-    if (!text || !isVisible(el) || isInSkipArea(el, skipSelectors)) return;
-    
-    const tagName = el.tagName.toLowerCase();
-    
-    if (tagName.match(/^h[1-6]$/) && !isNavigationElement(el, text)) {
-      readableElements.push(el);
-    } else if ((tagName === 'p' || tagName === 'blockquote') && 
-               (text.length >= 10 || !isNavigationElement(el, text))) {
-      readableElements.push(el);
+  function togglePause() {
+    if (!readerState.enabled) {
+      return getReaderStatus();
     }
-  });
-  
-  readableElements.sort((a, b) => {
-    const posA = a.getBoundingClientRect().top + window.scrollY;
-    const posB = b.getBoundingClientRect().top + window.scrollY;
-    return posA - posB;
-  });
-  
-  return readableElements;
-}
 
-function isInSkipArea(element, skipSelectors) {
-  return skipSelectors.some(selector => element.closest(selector));
-}
-
-function isNavigationElement(element, text) {
-  const navKeywords = [
-    'log in', 'sign in', 'sign up', 'register', 'edit', 'history',
-    'main page', 'contents', 'donate', 'help'
-  ];
-  
-  const lowerText = text.toLowerCase().trim();
-  return navKeywords.some(keyword => 
-    lowerText === keyword || (text.length < 20 && lowerText.includes(keyword))
-  );
-}
-
-function isVisible(element) {
-  const style = window.getComputedStyle(element);
-  return style.display !== 'none' && 
-         style.visibility !== 'hidden' && 
-         style.opacity !== '0' &&
-         element.offsetWidth > 0 &&
-         element.offsetHeight > 0;
-}
-
-// ============================================================================
-// READING LOGIC
-// ============================================================================
-
-function readElement(element) {
-  if (!element || !isReading) return;
-  
-  removeHighlight();
-  highlightElement(element);
-  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  
-  const text = getElementText(element);
-  updateWidgetStatus(`Reading: ${element.tagName}`);
-  
-  speak(text, () => {
-    if (isReading && currentIndex < readableElements.length - 1) {
-      currentIndex++;
-      readElement(readableElements[currentIndex]);
+    readerState.paused = !readerState.paused;
+    if (readerState.paused) {
+      speechSynthesis.pause();
     } else {
-      isReading = false;
-      removeHighlight();
-      updateWidgetStatus('Complete');
-      speak("Reading complete.");
-      setTimeout(() => removeWidget(), 2000);
+      speechSynthesis.resume();
     }
-  });
-}
+    updateReaderWidget();
+    return getReaderStatus();
+  }
 
-function getElementText(element) {
-  const tagName = element.tagName.toLowerCase();
-  let text = element.innerText.trim()
-    .replace(/\[\d+\]/g, '')
-    .replace(/\[edit\]/gi, '')
-    .replace(/\s+/g, ' ');
-  
-  if (tagName === 'h1') return `Title: ${text}`;
-  if (tagName === 'h2') return `Section: ${text}`;
-  if (tagName.match(/^h[3-6]$/)) return `Subsection: ${text}`;
-  if (tagName === 'blockquote') return `Quote: ${text}`;
-  return text;
-}
+  function readNext() {
+    if (!readerState.enabled) {
+      return;
+    }
+    if (readerState.currentIndex >= readerState.elements.length - 1) {
+      speak("This is the last element.");
+      return;
+    }
+    readerState.currentIndex += 1;
+    readerState.paused = false;
+    readCurrentElement();
+  }
 
-function speak(text, onEnd) {
-  window.speechSynthesis.cancel();
-  
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = speechSettings.speed;
-  utterance.pitch = speechSettings.pitch;
-  utterance.volume = speechSettings.volume;
-  
-  if (onEnd) utterance.onend = onEnd;
-  
-  window.speechSynthesis.speak(utterance);
-}
+  function readPrevious() {
+    if (!readerState.enabled) {
+      return;
+    }
+    if (readerState.currentIndex <= 0) {
+      speak("This is the first element.");
+      return;
+    }
+    readerState.currentIndex -= 1;
+    readerState.paused = false;
+    readCurrentElement();
+  }
 
-function highlightElement(element) {
-  element.classList.add('accessible-highlight');
-  element.setAttribute('data-accessible-reading', 'true');
-}
+  function readCurrentElement() {
+    if (!readerState.enabled || readerState.paused) {
+      return;
+    }
 
-function removeHighlight() {
-  document.querySelectorAll('[data-accessible-reading="true"]').forEach(el => {
-    el.classList.remove('accessible-highlight');
-    el.removeAttribute('data-accessible-reading');
-  });
-}
+    const element = readerState.elements[readerState.currentIndex];
+    if (!element) {
+      stopReader();
+      return;
+    }
 
-// ============================================================================
-// WIDGET UI (Preserved from your original)
-// ============================================================================
+    clearCurrentHighlight();
+    element.setAttribute("data-accessable-reading-current", "true");
+    element.scrollIntoView({ block: "center", behavior: "smooth" });
 
-function createWidget() {
-  if (widget) return;
-  
-  widget = document.createElement('div');
-  widget.id = 'accessible-widget';
-  widget.innerHTML = `
-    <div id="accessible-widget-header">
-      <span id="accessible-widget-title">AccessAble</span>
-      <button id="accessible-widget-close" aria-label="Close">×</button>
-    </div>
-    <div id="accessible-widget-status">Ready</div>
-    <div id="accessible-widget-controls">
-      <button class="accessible-widget-btn" id="widget-pause">Pause</button>
-      <button class="accessible-widget-btn" id="widget-prev">Previous</button>
-      <button class="accessible-widget-btn" id="widget-next">Next</button>
-    </div>
-    <div id="accessible-widget-shortcuts">
-      <div id="accessible-widget-shortcuts-grid">
-        <div class="shortcut-item">
-          <span class="accessible-widget-kbd">Alt+R</span>
-          <span class="shortcut-label">Toggle</span>
-        </div>
-        <div class="shortcut-item">
-          <span class="accessible-widget-kbd">Alt+S</span>
-          <span class="shortcut-label">Pause</span>
-        </div>
-        <div class="shortcut-item">
-          <span class="accessible-widget-kbd">Alt+N</span>
-          <span class="shortcut-label">Next</span>
-        </div>
-        <div class="shortcut-item">
-          <span class="accessible-widget-kbd">Alt+P</span>
-          <span class="shortcut-label">Prev</span>
-        </div>
+    const text = formatElementText(element);
+    updateReaderWidget();
+    speak(text, () => {
+      if (!readerState.enabled) {
+        return;
+      }
+      if (readerState.currentIndex >= readerState.elements.length - 1) {
+        speak("Reading complete.");
+        stopReader();
+        return;
+      }
+      readerState.currentIndex += 1;
+      readCurrentElement();
+    });
+  }
+
+  function collectReadableElements() {
+    const root =
+      document.querySelector("main") ||
+      document.querySelector("[role='main']") ||
+      document.body;
+
+    const selectors = "h1,h2,h3,h4,h5,h6,p,blockquote,li";
+    const skipAreas = "nav,header,footer,aside,[role='navigation'],[aria-hidden='true']";
+    const nodes = root.querySelectorAll(selectors);
+    const result = [];
+
+    for (const node of nodes) {
+      if (!(node instanceof HTMLElement)) {
+        continue;
+      }
+      if (node.closest(skipAreas)) {
+        continue;
+      }
+      if (!isVisible(node)) {
+        continue;
+      }
+      const text = (node.innerText || "").trim();
+      if (text.length < 8) {
+        continue;
+      }
+      result.push(node);
+    }
+
+    result.sort((a, b) => {
+      const topA = a.getBoundingClientRect().top + window.scrollY;
+      const topB = b.getBoundingClientRect().top + window.scrollY;
+      return topA - topB;
+    });
+    return result;
+  }
+
+  function isVisible(element) {
+    const style = getComputedStyle(element);
+    return (
+      style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      Number(style.opacity || "1") > 0 &&
+      element.offsetHeight > 0 &&
+      element.offsetWidth > 0
+    );
+  }
+
+  function formatElementText(element) {
+    const text = (element.innerText || "").replace(/\s+/g, " ").trim();
+    const tag = element.tagName.toLowerCase();
+    if (tag === "h1") {
+      return `Title: ${text}`;
+    }
+    if (tag === "h2" || tag === "h3") {
+      return `Section: ${text}`;
+    }
+    if (tag === "blockquote") {
+      return `Quote: ${text}`;
+    }
+    return text;
+  }
+
+  function speak(text, onEnd) {
+    speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = Number(readerState.settings.speed) || 1;
+    utterance.pitch = Number(readerState.settings.pitch) || 1;
+    utterance.volume = Number(readerState.settings.volume) || 1;
+    if (typeof onEnd === "function") {
+      utterance.onend = onEnd;
+    }
+    speechSynthesis.speak(utterance);
+  }
+
+  function clearCurrentHighlight() {
+    document
+      .querySelectorAll("[data-accessable-reading-current='true']")
+      .forEach((node) => node.removeAttribute("data-accessable-reading-current"));
+  }
+
+  function createReaderWidget() {
+    if (readerState.widget) {
+      return;
+    }
+
+    const widget = document.createElement("aside");
+    widget.id = "accessable-reader-widget";
+    widget.setAttribute("role", "region");
+    widget.setAttribute("aria-label", "AccessAble Reader Controls");
+    widget.innerHTML = `
+      <div class="accessable-widget-header">
+        <strong>AccessAble Reader</strong>
+        <button type="button" class="accessable-widget-close" aria-label="Close reader">x</button>
       </div>
-    </div>
-  `;
-  
-  document.body.appendChild(widget);
-  attachWidgetListeners();
-}
+      <p class="accessable-widget-status" aria-live="polite"></p>
+      <div class="accessable-widget-actions">
+        <button type="button" data-action="pause">Pause</button>
+        <button type="button" data-action="previous">Previous</button>
+        <button type="button" data-action="next">Next</button>
+      </div>
+    `;
 
-function attachWidgetListeners() {
-  document.getElementById('accessible-widget-close')?.addEventListener('click', () => {
-    isReading = false;
-    stopReading();
-    removeWidget();
-  });
-  
-  document.getElementById('widget-pause')?.addEventListener('click', pauseResume);
-  document.getElementById('widget-prev')?.addEventListener('click', readPrevious);
-  document.getElementById('widget-next')?.addEventListener('click', readNext);
-}
+    const closeButton = widget.querySelector(".accessable-widget-close");
+    closeButton?.addEventListener("click", () => stopReader());
+    widget.querySelector("[data-action='pause']")?.addEventListener("click", () => togglePause());
+    widget.querySelector("[data-action='previous']")?.addEventListener("click", () => readPrevious());
+    widget.querySelector("[data-action='next']")?.addEventListener("click", () => readNext());
 
-function removeWidget() {
-  widget?.remove();
-  widget = null;
-}
-
-function updateWidgetStatus(status) {
-  const statusEl = document.getElementById('accessible-widget-status');
-  if (statusEl) statusEl.textContent = status;
-}
-
-function updateWidgetPauseButton() {
-  const pauseBtn = document.getElementById('widget-pause');
-  if (pauseBtn) {
-    pauseBtn.textContent = isPaused ? 'Resume' : 'Pause';
-    pauseBtn.classList.toggle('active', isPaused);
+    document.body.appendChild(widget);
+    readerState.widget = widget;
   }
-}
+
+  function updateReaderWidget() {
+    if (!readerState.widget) {
+      return;
+    }
+    const status = readerState.widget.querySelector(".accessable-widget-status");
+    const pauseButton = readerState.widget.querySelector("[data-action='pause']");
+
+    if (status) {
+      const text = readerState.enabled
+        ? `Reading item ${readerState.currentIndex + 1} of ${readerState.elements.length}`
+        : "Reader disabled";
+      status.textContent = text;
+    }
+    if (pauseButton) {
+      pauseButton.textContent = readerState.paused ? "Resume" : "Pause";
+    }
+  }
+
+  function removeReaderWidget() {
+    if (readerState.widget) {
+      readerState.widget.remove();
+      readerState.widget = null;
+    }
+  }
+})();
