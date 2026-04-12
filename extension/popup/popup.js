@@ -12,6 +12,7 @@ const FALLBACK_ACTIONS = Object.freeze({
   CONTENT_TOGGLE_KEYBOARD_MODULE: "content.toggleKeyboardModule",
   CONTENT_TOGGLE_CAPTIONS_MODULE: "content.toggleCaptionsModule",
   CONTENT_SCAN_VIDEO_CANDIDATES: "content.scanVideoCandidates",
+  CONTENT_GET_KEYBOARD_STATUS: "content.getKeyboardStatus",
 });
 
 const contracts = globalThis.AccessAbleContracts || {};
@@ -53,6 +54,7 @@ async function initializePopup() {
   initializeTabs();
   await loadStoredState();
   renderAll();
+  await syncKeyboardFixesFromActiveTab();
   await checkBackend();
 }
 
@@ -527,6 +529,36 @@ async function onSettingChange(key, value) {
     });
   } catch (_) {
     // Non-blocking: keep setting persistence even when tab messaging fails.
+  }
+}
+
+/**
+ * Elements Adjusted = count of keyboard fixes on the *current tab's page* (not global).
+ * Each navigation loads a new document, so fixes are re-applied and the count can differ.
+ * We sync from the content script whenever the popup opens so the number is not stuck at 0.
+ */
+async function syncKeyboardFixesFromActiveTab() {
+  if (!refs.elementsAdjustedValue) {
+    return;
+  }
+  try {
+    const tab = await getActiveTab();
+    if (!tab?.id || isRestrictedTab(tab.url)) {
+      refs.elementsAdjustedValue.textContent = "0";
+      return;
+    }
+    const response = await sendTabMessage(tab.id, {
+      action: ACTIONS.CONTENT_GET_KEYBOARD_STATUS,
+      payload: {},
+    });
+    if (!response?.ok) {
+      return;
+    }
+    const fixes = Array.isArray(response.data?.fixesApplied) ? response.data.fixesApplied.length : 0;
+    const enabled = Boolean(response.data?.enabled);
+    refs.elementsAdjustedValue.textContent = enabled ? String(fixes) : "0";
+  } catch (_) {
+    // Tab may not have content script yet (e.g. chrome:// page).
   }
 }
 

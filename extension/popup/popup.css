@@ -135,6 +135,14 @@ h1 {
   color: #c4cef4;
 }
 
+.stat-hint {
+  margin: 6px 0 0;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
 .popup-main {
   display: flex;
   flex-direction: column;
