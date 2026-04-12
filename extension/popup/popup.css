@@ -182,9 +182,17 @@ h1 {
 }
 
 .module-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: var(--text-primary);
   font-size: 14px;
   font-weight: 600;
+}
+
+.module-icon {
+  font-size: 15px;
+  line-height: 1;
 }
 
 .module-status {
@@ -227,6 +235,11 @@ h1 {
 
 .toggle-control.active .module-status {
   color: #d9fff0;
+}
+
+.module-card:has(.toggle-control.active) {
+  border-color: rgba(30, 200, 130, 0.4);
+  background: rgba(25, 195, 125, 0.06);
 }
 
 .inline-action {

@@ -15,6 +15,49 @@
     fixedCountCache: null,
   };
 
+  // Logging utility — initialized once for the whole extension content context.
+  // Modules 2 and 3 (loaded after this file) reference it via globalThis.AccessAbleLogs.
+  if (!globalThis.AccessAbleLogs) {
+    const _LOG_KEY = "accessable_logs";
+    const _LOG_MAX = 100;
+
+    function _writeLog(entry) {
+      return chrome.storage.local
+        .get([_LOG_KEY])
+        .then((data) => {
+          const logs = Array.isArray(data[_LOG_KEY]) ? data[_LOG_KEY] : [];
+          logs.push(entry);
+          if (logs.length > _LOG_MAX) {
+            logs.splice(0, logs.length - _LOG_MAX);
+          }
+          return chrome.storage.local.set({ [_LOG_KEY]: logs });
+        })
+        .catch(() => {});
+    }
+
+    globalThis.AccessAbleLogs = {
+      log(module, action, result, detail, url) {
+        void _writeLog({
+          timestamp: Date.now(),
+          module,
+          action,
+          result,
+          detail: String(detail || ""),
+          url: String(url || window.location.href),
+        });
+      },
+      getAll() {
+        return chrome.storage.local
+          .get([_LOG_KEY])
+          .then((data) => (Array.isArray(data[_LOG_KEY]) ? data[_LOG_KEY] : []))
+          .catch(() => []);
+      },
+      clear() {
+        return chrome.storage.local.set({ [_LOG_KEY]: [] }).catch(() => {});
+      },
+    };
+  }
+
   function enable() {
     if (state.enabled) {
       return { enabled: true };
@@ -102,6 +145,13 @@
         })
       );
 
+      if (updated > 0) {
+        void globalThis.AccessAbleLogs?.log(
+          "module1", "image_alt_generated", "success",
+          `${updated} of ${imagesToAnalyze.length} image(s) described`,
+          window.location.href
+        );
+      }
       return { scanned: imagesToAnalyze.length, updated };
     } catch {
       return { scanned: imagesToAnalyze.length, updated: 0 };

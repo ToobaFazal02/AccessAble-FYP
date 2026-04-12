@@ -14,7 +14,9 @@
     }
 
     const start = Number(rawCue.start);
-    const end = Number(rawCue.end);
+    const end = Number.isFinite(Number(rawCue.end))
+      ? Number(rawCue.end)
+      : start + Number(rawCue.duration || 0);
     const text = sanitizeCueText(rawCue.text);
     const lang = normalizeLanguageCode(rawCue.lang || options.lang || "und");
     const isAuto = Boolean(rawCue.isAuto ?? options.isAuto);

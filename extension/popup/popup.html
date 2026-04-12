@@ -21,11 +21,11 @@
 
       <section class="stats-grid" aria-label="Accessibility metrics">
         <article class="stat-card">
-          <p class="stat-value">0</p>
+          <p class="stat-value" id="imagesFixedStat">0</p>
           <p class="stat-label">Images Fixed</p>
         </article>
         <article class="stat-card">
-          <p class="stat-value">0</p>
+          <p class="stat-value" id="elementsAdjustedStat">0</p>
           <p class="stat-label">Elements Adjusted</p>
         </article>
       </section>
@@ -34,7 +34,7 @@
         <section class="module-card">
           <button id="toggleReader" class="btn-primary toggle-control" type="button">
             <span class="module-copy">
-              <span class="module-title">Screen Reader</span>
+              <span class="module-title"><span class="module-icon" aria-hidden="true">🔊</span> Screen Reader</span>
               <span id="readerStatus" class="module-status">Start Reading</span>
             </span>
             <span class="toggle-switch" aria-hidden="true">
@@ -49,7 +49,7 @@
         <section class="module-card">
           <button id="toggleImageMode" class="btn-primary toggle-control" type="button">
             <span class="module-copy">
-              <span class="module-title">AI Image Descriptions</span>
+              <span class="module-title"><span class="module-icon" aria-hidden="true">🖼️</span> AI Image Descriptions</span>
               <span id="imageModeStatus" class="module-status">Enable Image Mode</span>
             </span>
             <span class="toggle-switch" aria-hidden="true">
@@ -61,7 +61,7 @@
         <section class="module-card">
           <button id="toggleKeyboardMode" class="btn-primary toggle-control" type="button">
             <span class="module-copy">
-              <span class="module-title">Keyboard Assist</span>
+              <span class="module-title"><span class="module-icon" aria-hidden="true">⌨️</span> Keyboard Assist</span>
               <span id="keyboardModeStatus" class="module-status">Enable Keyboard Assist</span>
             </span>
             <span class="toggle-switch" aria-hidden="true">
@@ -73,8 +73,8 @@
         <section class="module-card">
           <button id="toggleCaptionsMode" class="btn-primary toggle-control" type="button">
             <span class="module-copy">
-              <span class="module-title">Video Captions</span>
-              <span id="captionsModeStatus" class="module-status">Highlight Video Targets</span>
+              <span class="module-title"><span class="module-icon" aria-hidden="true">💬</span> Video Captions</span>
+              <span id="captionsModeStatus" class="module-status">Enable Video Captions</span>
             </span>
             <span class="toggle-switch" aria-hidden="true">
               <span class="toggle-knob"></span>
@@ -130,7 +130,7 @@
       <footer class="action-footer">
         <div class="action-bar">
           <button id="scanCaptionsNow" class="btn-secondary action-button" type="button">
-            <span id="captionsScanStatus">Refresh</span>
+            <span id="captionsScanStatus">Check Captions Now</span>
           </button>
           <label for="settingsDrawerToggle" class="btn-secondary action-button settings-button">
             Settings

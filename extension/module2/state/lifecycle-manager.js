@@ -30,6 +30,14 @@
       attachMutationObserver();
       attachNavigationEvents();
       state.hrefPollId = window.setInterval(checkHrefChange, 600);
+
+      const onVideoSignal = () => scheduleRebind();
+      document.addEventListener("emptied", onVideoSignal, true);
+      document.addEventListener("loadeddata", onVideoSignal, true);
+      state.cleanupHandlers.push(() => {
+        document.removeEventListener("emptied", onVideoSignal, true);
+        document.removeEventListener("loadeddata", onVideoSignal, true);
+      });
     }
 
     function stop() {

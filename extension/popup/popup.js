@@ -83,7 +83,8 @@ function cacheElements() {
   refs.volume = document.getElementById("volume");
   refs.volumeValue = document.getElementById("volumeValue");
   refs.statusText = document.getElementById("statusText");
-  refs.imagesFixedValue = findStatValueByLabel("Images Fixed");
+  refs.imagesFixedValue = document.getElementById("imagesFixedStat") || findStatValueByLabel("Images Fixed");
+  refs.elementsAdjustedValue = document.getElementById("elementsAdjustedStat");
 }
 
 function findStatValueByLabel(labelText) {
@@ -358,8 +359,14 @@ async function onToggleKeyboardMode() {
 
     if (popupState.keyboardModuleEnabled) {
       const fixes = Array.isArray(response.data?.fixesApplied) ? response.data.fixesApplied.length : 0;
+      if (refs.elementsAdjustedValue) {
+        refs.elementsAdjustedValue.textContent = String(fixes);
+      }
       updateStatus(`Keyboard assist enabled (${fixes} fix${fixes === 1 ? "" : "es"})`);
     } else {
+      if (refs.elementsAdjustedValue) {
+        refs.elementsAdjustedValue.textContent = "0";
+      }
       updateStatus("Keyboard assist disabled");
     }
   } catch (error) {
@@ -387,7 +394,7 @@ async function onToggleCaptionsMode() {
       payload: { enabled: desired },
     });
     if (!response?.ok) {
-      throw new Error(extractResponseError(response, "Captions highlight toggle failed"));
+      throw new Error(extractResponseError(response, "Video captions toggle failed"));
     }
 
     popupState.captionsModuleEnabled = Boolean(response.data?.highlighted);
@@ -395,11 +402,11 @@ async function onToggleCaptionsMode() {
     renderCaptionsModeState();
     updateStatus(
       popupState.captionsModuleEnabled
-        ? "Video target highlights enabled"
-        : "Video target highlights disabled"
+        ? "Video Captions: Enabled"
+        : "Video Captions: Disabled"
     );
   } catch (error) {
-    updateStatus(error.message || "Captions highlight toggle failed", true);
+    updateStatus(error.message || "Video captions toggle failed", true);
   }
 }
 
@@ -627,8 +634,8 @@ function renderCaptionsModeState() {
 
   refs.toggleCaptionsMode.classList.toggle("active", popupState.captionsModuleEnabled);
   refs.captionsModeStatus.textContent = popupState.captionsModuleEnabled
-    ? "Disable Video Highlights"
-    : "Highlight Video Targets";
+    ? "Disable Video Captions"
+    : "Enable Video Captions";
 }
 
 function renderCaptionsScanState() {

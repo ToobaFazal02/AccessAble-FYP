@@ -28,6 +28,30 @@ const CAPTIONS_CACHE_SCOPE = "captions";
 const TELEMETRY_SCOPE = "keyboard";
 const IMAGE_ALT_INJECTED_ACTION = "image.altInjected";
 
+// Caption backend: local dev server.
+// To switch back to Render, replace the line below with:
+// const CAPTIONS_BASE_URL = "https://accessable-fyp.onrender.com";
+const CAPTIONS_BASE_URL = "http://127.0.0.1:8000";
+
+// Background-side log writer — same storage key as content-script AccessAbleLogs.
+// Fire-and-forget; never awaited so it cannot slow down response paths.
+const _BG_LOG_KEY = "accessable_logs";
+const _BG_LOG_MAX = 100;
+
+function appendLog(entry) {
+  void chrome.storage.local
+    .get([_BG_LOG_KEY])
+    .then((data) => {
+      const logs = Array.isArray(data[_BG_LOG_KEY]) ? data[_BG_LOG_KEY] : [];
+      logs.push(entry);
+      if (logs.length > _BG_LOG_MAX) {
+        logs.splice(0, logs.length - _BG_LOG_MAX);
+      }
+      return chrome.storage.local.set({ [_BG_LOG_KEY]: logs });
+    })
+    .catch(() => {});
+}
+
 const IMAGE_QUEUE_POLICY = Object.freeze({
   MAX_CONCURRENT_TASKS: 2,
   MIN_DELAY_BETWEEN_REQUESTS_MS: 350,
@@ -520,7 +544,7 @@ async function extractCaptions(payload) {
     return { ok: true, data: { ...cached, fromCache: true } };
   }
 
-  const baseUrl = await resolveBackendBaseUrl();
+  const baseUrl = CAPTIONS_BASE_URL;
   logCaptionsDebug("captions_extract_request", {
     videoUrl,
     baseUrl,
@@ -551,6 +575,8 @@ async function extractCaptions(payload) {
       status: response.status,
       error: message,
     });
+    appendLog({ timestamp: Date.now(), module: "module2", action: "captions_extract",
+      result: "error", detail: message, url: videoUrl });
     return { ok: false, error: { message, statusCode: response.status } };
   }
 
@@ -573,6 +599,10 @@ async function extractCaptions(payload) {
   };
 
   await writeCache(cacheKey, normalized);
+  appendLog({ timestamp: Date.now(), module: "module2", action: "captions_extract",
+    result: "success",
+    detail: `${normalized.caption_tracks.length} track(s) found`,
+    url: videoUrl });
   return { ok: true, data: { ...normalized, fromCache: false } };
 }
 
@@ -649,6 +679,7 @@ async function assistCaptions(payload, action) {
     parseJson: true,
     timeoutMs,
     retries,
+    baseUrl: CAPTIONS_BASE_URL,
   });
 
   if (!response.ok) {
@@ -818,6 +849,7 @@ async function requestWithRetryBounded({
   parseJson,
   timeoutMs,
   retries,
+  baseUrl,
 }) {
   let attempt = 0;
   const maxRetries = clampInteger(retries, 0, 5, 0);
@@ -829,6 +861,7 @@ async function requestWithRetryBounded({
       body,
       parseJson,
       timeoutMs,
+      baseUrl,
     });
 
     if (response.ok || attempt === maxRetries) {

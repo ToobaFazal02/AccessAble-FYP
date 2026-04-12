@@ -89,7 +89,7 @@ class CaptionExtractor:
     def _generate_cache_key(video_url: str) -> str:
         """Generate cache key from video URL"""
         url_hash = hashlib.sha256(video_url.encode()).hexdigest()
-        return f"caption:v3:{url_hash}"  # v3 = new API
+        return f"caption:v4:{url_hash}"  # v4 = includes embedded cues
     
     @classmethod
     async def _get_from_cache(cls, cache_key: str) -> Optional[Dict]:
@@ -156,6 +156,8 @@ class CaptionExtractor:
                     return parsed.path.split('/embed/')[-1].split('?')[0]
                 elif parsed.path.startswith('/v/'):
                     return parsed.path.split('/v/')[-1].split('?')[0]
+                elif parsed.path.startswith('/shorts/'):
+                    return parsed.path.split('/shorts/')[-1].split('/')[0].split('?')[0]
             
             # youtu.be/VIDEO_ID
             elif parsed.hostname == 'youtu.be':
@@ -191,33 +193,51 @@ class CaptionExtractor:
             api = YouTubeTranscriptApi()
             transcript_list = api.list(video_id)  # NEW METHOD NAME
             
-            # Step 3: Extract tracks
+            # Step 3: Extract tracks with inline cue data
             tracks = []
             seen_languages = set()
             
-            # Iterate through available transcripts
             for transcript in transcript_list:
                 if transcript.language_code in seen_languages:
                     continue
                 
                 seen_languages.add(transcript.language_code)
                 
-                # Build VTT download URL
                 vtt_url = f"https://www.youtube.com/api/timedtext?v={video_id}&lang={transcript.language_code}&fmt=vtt"
+                
+                # Fetch actual cue data so the extension doesn't need to
+                # hit the unsigned timedtext URL (which often fails).
+                cues = []
+                try:
+                    fetched = api.fetch(video_id, languages=[transcript.language_code])
+                    for snippet in fetched:
+                        text = str(getattr(snippet, 'text', '') or '').strip()
+                        start = float(getattr(snippet, 'start', 0) or 0)
+                        duration = float(getattr(snippet, 'duration', 0) or 0)
+                        if text and duration > 0:
+                            cues.append({
+                                'start': round(start, 3),
+                                'end': round(start + duration, 3),
+                                'text': text,
+                            })
+                except Exception as cue_err:
+                    log_warning(f"Could not fetch cue data for {transcript.language_code}: {cue_err}")
                 
                 track = {
                     'language': transcript.language_code,
                     'language_name': transcript.language,
                     'format': 'vtt',
                     'url': vtt_url,
-                    'auto_generated': transcript.is_generated
+                    'auto_generated': transcript.is_generated,
+                    'cues': cues,
                 }
                 
                 tracks.append(track)
                 
                 log_info(
                     f"Found caption: {transcript.language} ({transcript.language_code}) "
-                    f"[{'Auto' if transcript.is_generated else 'Manual'}]"
+                    f"[{'Auto' if transcript.is_generated else 'Manual'}] "
+                    f"({len(cues)} cues fetched)"
                 )
             
             if not tracks:

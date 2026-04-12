@@ -92,6 +92,32 @@
   async function fetchCues(track, _context, options = {}) {
     const timeoutMs = Number(options.timeoutMs) || 4000;
     const retries = Number(options.retries) || 2;
+
+    if (Array.isArray(track?.embeddedCues) && track.embeddedCues.length > 0) {
+      debugLog(options.debug, "cue_fetch_source", {
+        source: "backend_embedded",
+        cueCount: track.embeddedCues.length,
+        lang: track?.lang || "",
+        isAuto: Boolean(track?.isAuto),
+      });
+      return normalizeCues(
+        track.embeddedCues.map((c) => {
+          const start = Number(c.start);
+          const end = Number.isFinite(Number(c.end))
+            ? Number(c.end)
+            : start + Number(c.duration || 0);
+          return {
+            start,
+            end,
+            text: String(c.text || ""),
+            lang: track.lang,
+            isAuto: Boolean(track.isAuto),
+          };
+        }),
+        { lang: track.lang, isAuto: track.isAuto }
+      );
+    }
+
     const trackUrl = String(track?.src || "").trim();
     if (!isSafeCaptionUrl(trackUrl)) {
       return [];
@@ -393,6 +419,7 @@
         }
 
         const lang = normalizeLanguageCode(track?.language);
+        const embeddedCues = Array.isArray(track?.cues) ? track.cues : [];
         result.push({
           id: `backend_${lang}_${i}`,
           lang,
@@ -401,6 +428,7 @@
           kind: Boolean(track?.auto_generated) ? "auto" : "manual",
           src,
           source: "youtube_backend",
+          embeddedCues,
         });
       }
 
@@ -562,23 +590,64 @@
   }
 
   function getPlayerResponse() {
-    if (globalThis.ytInitialPlayerResponse && typeof globalThis.ytInitialPlayerResponse === "object") {
-      return globalThis.ytInitialPlayerResponse;
-    }
-
-    const rawPlayerResponse = globalThis.ytplayer?.config?.args?.player_response;
-    if (typeof rawPlayerResponse === "string") {
-      try {
-        return JSON.parse(rawPlayerResponse);
-      } catch (_) {
-        return null;
+    // Content scripts run in an isolated world and cannot access main-world
+    // variables like ytInitialPlayerResponse. However, the initial page HTML
+    // embeds it inside a <script> tag, which we CAN read via DOM access.
+    const fromScripts = parsePlayerResponseFromScripts();
+    if (fromScripts) {
+      const currentVideoId = extractYouTubeVideoId(window.location.href);
+      const responseVideoId =
+        fromScripts?.videoDetails?.videoId ||
+        extractYouTubeVideoId(fromScripts?.microformat?.playerMicroformatRenderer?.ownerProfileUrl || "");
+      if (!currentVideoId || currentVideoId === responseVideoId) {
+        return fromScripts;
       }
     }
 
-    if (rawPlayerResponse && typeof rawPlayerResponse === "object") {
-      return rawPlayerResponse;
-    }
+    return null;
+  }
 
+  function parsePlayerResponseFromScripts() {
+    const scripts = document.querySelectorAll("script");
+    for (const script of scripts) {
+      const text = script.textContent || "";
+      if (!text.includes("ytInitialPlayerResponse")) {
+        continue;
+      }
+      const match = text.match(/ytInitialPlayerResponse\s*=\s*\{/);
+      if (!match) {
+        continue;
+      }
+      const startIdx = text.indexOf("{", match.index + match[0].length - 1);
+      if (startIdx < 0) {
+        continue;
+      }
+      const jsonStr = extractBalancedJson(text, startIdx);
+      if (!jsonStr) {
+        continue;
+      }
+      try {
+        const parsed = JSON.parse(jsonStr);
+        if (parsed && typeof parsed === "object") {
+          return parsed;
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  function extractBalancedJson(text, startIdx) {
+    let depth = 0;
+    for (let i = startIdx; i < text.length; i++) {
+      if (text[i] === "{") {
+        depth++;
+      } else if (text[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          return text.slice(startIdx, i + 1);
+        }
+      }
+    }
     return null;
   }
 
