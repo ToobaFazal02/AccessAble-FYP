@@ -207,7 +207,6 @@
             return;
           }
           if (cue) {
-            state.renderer.clear();
             state.renderer.showCue(cue);
           } else if (state.engineStatus.stage === "ready") {
             state.renderer.clear();

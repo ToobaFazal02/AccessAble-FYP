@@ -33,6 +33,11 @@
 
     CONTENT_TOGGLE_CAPTIONS_MODULE: "content.toggleCaptionsModule",
     CONTENT_SCAN_VIDEO_CANDIDATES: "content.scanVideoCandidates",
+
+    VOICE_ENABLE: "voice.enable",
+    VOICE_DISABLE: "voice.disable",
+    VOICE_GET_STATUS: "voice.getStatus",
+    VOICE_TRACK_COMMAND: "voice.trackCommand",
   });
 
   const ENDPOINTS = Object.freeze({
@@ -95,6 +100,7 @@
     imageModuleEnabled: false,
     keyboardModuleEnabled: false,
     captionsModuleEnabled: false,
+    voiceModuleEnabled: false,
   });
 
   const CACHE_POLICY = Object.freeze({

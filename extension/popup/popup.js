@@ -12,6 +12,10 @@ const FALLBACK_ACTIONS = Object.freeze({
   CONTENT_TOGGLE_KEYBOARD_MODULE: "content.toggleKeyboardModule",
   CONTENT_TOGGLE_CAPTIONS_MODULE: "content.toggleCaptionsModule",
   CONTENT_SCAN_VIDEO_CANDIDATES: "content.scanVideoCandidates",
+  CONTENT_GET_KEYBOARD_STATUS: "content.getKeyboardStatus",
+  VOICE_ENABLE: "voice.enable",
+  VOICE_DISABLE: "voice.disable",
+  VOICE_GET_STATUS: "voice.getStatus",
 });
 
 const contracts = globalThis.AccessAbleContracts || {};
@@ -35,6 +39,7 @@ const popupState = {
   imageModuleEnabled: false,
   keyboardModuleEnabled: false,
   captionsModuleEnabled: false,
+  voiceModuleEnabled: false,
   captionsScanInProgress: false,
   imagesFixed: 0,
   settings: { ...DEFAULT_SETTINGS },
@@ -53,6 +58,7 @@ async function initializePopup() {
   initializeTabs();
   await loadStoredState();
   renderAll();
+  await syncKeyboardFixesFromActiveTab();
   await checkBackend();
 }
 
@@ -71,6 +77,9 @@ function cacheElements() {
   refs.toggleKeyboardMode = document.getElementById("toggleKeyboardMode");
   refs.keyboardModeStatus = document.getElementById("keyboardModeStatus");
 
+  refs.toggleVoiceMode = document.getElementById("toggleVoiceMode");
+  refs.voiceModeStatus = document.getElementById("voiceModeStatus");
+
   refs.toggleCaptionsMode = document.getElementById("toggleCaptionsMode");
   refs.captionsModeStatus = document.getElementById("captionsModeStatus");
   refs.scanCaptionsNow = document.getElementById("scanCaptionsNow");
@@ -83,7 +92,8 @@ function cacheElements() {
   refs.volume = document.getElementById("volume");
   refs.volumeValue = document.getElementById("volumeValue");
   refs.statusText = document.getElementById("statusText");
-  refs.imagesFixedValue = findStatValueByLabel("Images Fixed");
+  refs.imagesFixedValue = document.getElementById("imagesFixedStat") || findStatValueByLabel("Images Fixed");
+  refs.elementsAdjustedValue = document.getElementById("elementsAdjustedStat");
 }
 
 function findStatValueByLabel(labelText) {
@@ -113,6 +123,7 @@ function bindEvents() {
   refs.pauseResume?.addEventListener("click", () => void onPauseResume());
   refs.toggleImageMode?.addEventListener("click", () => void onToggleImageMode());
   refs.toggleKeyboardMode?.addEventListener("click", () => void onToggleKeyboardMode());
+  refs.toggleVoiceMode?.addEventListener("click", () => void onToggleVoiceMode());
   refs.toggleCaptionsMode?.addEventListener("click", () => void onToggleCaptionsMode());
   refs.scanCaptionsNow?.addEventListener("click", () => void onScanCaptionsNow());
 
@@ -358,12 +369,53 @@ async function onToggleKeyboardMode() {
 
     if (popupState.keyboardModuleEnabled) {
       const fixes = Array.isArray(response.data?.fixesApplied) ? response.data.fixesApplied.length : 0;
+      if (refs.elementsAdjustedValue) {
+        refs.elementsAdjustedValue.textContent = String(fixes);
+      }
       updateStatus(`Keyboard assist enabled (${fixes} fix${fixes === 1 ? "" : "es"})`);
     } else {
+      if (refs.elementsAdjustedValue) {
+        refs.elementsAdjustedValue.textContent = "0";
+      }
       updateStatus("Keyboard assist disabled");
     }
   } catch (error) {
     updateStatus(error.message || "Keyboard assist toggle failed", true);
+  }
+}
+
+async function onToggleVoiceMode() {
+  try {
+    const tab = await getActiveTab();
+    if (isRestrictedTab(tab.url)) {
+      updateStatus("Cannot run on browser pages", true);
+      return;
+    }
+
+    const ready = await ensureContentScript(tab.id);
+    if (!ready) {
+      updateStatus("Failed to load page scripts", true);
+      return;
+    }
+
+    const desired = !popupState.voiceModuleEnabled;
+    const response = await sendTabMessage(tab.id, {
+      action: desired ? ACTIONS.VOICE_ENABLE : ACTIONS.VOICE_DISABLE,
+    });
+    if (!response?.ok) {
+      throw new Error(extractResponseError(response, "Voice toggle failed"));
+    }
+
+    popupState.voiceModuleEnabled = Boolean(response.data?.enabled);
+    await persistState({ voiceModuleEnabled: popupState.voiceModuleEnabled });
+    renderVoiceState();
+    updateStatus(
+      popupState.voiceModuleEnabled
+        ? "Voice Commands: Enabled"
+        : "Voice Commands: Disabled"
+    );
+  } catch (error) {
+    updateStatus(error.message || "Voice toggle failed", true);
   }
 }
 
@@ -387,7 +439,7 @@ async function onToggleCaptionsMode() {
       payload: { enabled: desired },
     });
     if (!response?.ok) {
-      throw new Error(extractResponseError(response, "Captions highlight toggle failed"));
+      throw new Error(extractResponseError(response, "Video captions toggle failed"));
     }
 
     popupState.captionsModuleEnabled = Boolean(response.data?.highlighted);
@@ -395,11 +447,11 @@ async function onToggleCaptionsMode() {
     renderCaptionsModeState();
     updateStatus(
       popupState.captionsModuleEnabled
-        ? "Video target highlights enabled"
-        : "Video target highlights disabled"
+        ? "Video Captions: Enabled"
+        : "Video Captions: Disabled"
     );
   } catch (error) {
-    updateStatus(error.message || "Captions highlight toggle failed", true);
+    updateStatus(error.message || "Video captions toggle failed", true);
   }
 }
 
@@ -523,6 +575,36 @@ async function onSettingChange(key, value) {
   }
 }
 
+/**
+ * Elements Adjusted = count of keyboard fixes on the *current tab's page* (not global).
+ * Each navigation loads a new document, so fixes are re-applied and the count can differ.
+ * We sync from the content script whenever the popup opens so the number is not stuck at 0.
+ */
+async function syncKeyboardFixesFromActiveTab() {
+  if (!refs.elementsAdjustedValue) {
+    return;
+  }
+  try {
+    const tab = await getActiveTab();
+    if (!tab?.id || isRestrictedTab(tab.url)) {
+      refs.elementsAdjustedValue.textContent = "0";
+      return;
+    }
+    const response = await sendTabMessage(tab.id, {
+      action: ACTIONS.CONTENT_GET_KEYBOARD_STATUS,
+      payload: {},
+    });
+    if (!response?.ok) {
+      return;
+    }
+    const fixes = Array.isArray(response.data?.fixesApplied) ? response.data.fixesApplied.length : 0;
+    const enabled = Boolean(response.data?.enabled);
+    refs.elementsAdjustedValue.textContent = enabled ? String(fixes) : "0";
+  } catch (_) {
+    // Tab may not have content script yet (e.g. chrome:// page).
+  }
+}
+
 async function loadStoredState() {
   const [data, localData] = await Promise.all([
     chrome.storage.sync.get([
@@ -558,6 +640,7 @@ async function loadStoredState() {
   popupState.imageModuleEnabled = Boolean(storedState.imageModuleEnabled);
   popupState.keyboardModuleEnabled = Boolean(storedState.keyboardModuleEnabled);
   popupState.captionsModuleEnabled = Boolean(storedState.captionsModuleEnabled);
+  popupState.voiceModuleEnabled = Boolean(storedState.voiceModuleEnabled);
   popupState.imagesFixed = normalizeCounter(localData[IMAGES_FIXED_STORAGE_KEY]);
 }
 
@@ -581,6 +664,7 @@ function renderAll() {
   renderReaderState();
   renderImageModeState();
   renderKeyboardState();
+  renderVoiceState();
   renderCaptionsModeState();
   renderCaptionsScanState();
   renderSettings();
@@ -620,6 +704,17 @@ function renderKeyboardState() {
     : "Enable Keyboard Assist";
 }
 
+function renderVoiceState() {
+  if (!refs.toggleVoiceMode || !refs.voiceModeStatus) {
+    return;
+  }
+
+  refs.toggleVoiceMode.classList.toggle("active", popupState.voiceModuleEnabled);
+  refs.voiceModeStatus.textContent = popupState.voiceModuleEnabled
+    ? "Disable Voice Commands"
+    : "Enable Voice Commands";
+}
+
 function renderCaptionsModeState() {
   if (!refs.toggleCaptionsMode || !refs.captionsModeStatus) {
     return;
@@ -627,8 +722,8 @@ function renderCaptionsModeState() {
 
   refs.toggleCaptionsMode.classList.toggle("active", popupState.captionsModuleEnabled);
   refs.captionsModeStatus.textContent = popupState.captionsModuleEnabled
-    ? "Disable Video Highlights"
-    : "Highlight Video Targets";
+    ? "Disable Video Captions"
+    : "Enable Video Captions";
 }
 
 function renderCaptionsScanState() {

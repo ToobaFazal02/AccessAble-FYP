@@ -192,6 +192,7 @@
       if (settings.position === "top") {
         state.root.style.top = "8vh";
         state.root.style.bottom = "";
+        state.root.style.transform = "translateX(-50%)";
       } else if (settings.position === "middle") {
         state.root.style.top = "50%";
         state.root.style.bottom = "";
@@ -259,7 +260,8 @@
 
   function toRgba(color, opacity) {
     const alpha = Number.isFinite(Number(opacity)) ? Number(opacity) : 0.78;
-    const hex = String(color || "").trim();
+    const raw = String(color || "").trim();
+    const hex = expandHex3(raw);
 
     if (/^rgba?\(/i.test(hex)) {
       return hex;
@@ -273,6 +275,13 @@
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  function expandHex3(s) {
+    if (/^#[0-9a-f]{3}$/i.test(s)) {
+      return "#" + s[1] + s[1] + s[2] + s[2] + s[3] + s[3];
+    }
+    return s;
   }
 
   const api = Object.freeze({

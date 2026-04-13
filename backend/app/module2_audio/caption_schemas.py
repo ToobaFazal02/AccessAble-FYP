@@ -2,7 +2,7 @@
 Module 2: Audio Captioning - Request/Response Schemas (Pydantic V2 Compliant)
 """
 from pydantic import BaseModel, HttpUrl, Field, ConfigDict
-from typing import Optional, List
+from typing import Optional, List, Any
 
 
 class CaptionExtractionRequest(BaseModel):
@@ -29,12 +29,15 @@ class CaptionExtractionRequest(BaseModel):
 
 class CaptionTrack(BaseModel):
     """Schema for individual caption track"""
-    
+
+    model_config = ConfigDict(extra="allow")
+
     language: str = Field(..., description="Language code (e.g., 'en', 'es')")
     language_name: str = Field(..., description="Human-readable language name")
     format: str = Field(..., description="Caption format (vtt, srt, srv1, etc.)")
     url: Optional[str] = Field(None, description="Direct URL to caption file")
     auto_generated: bool = Field(False, description="Whether captions are auto-generated")
+    cues: List[Any] = Field(default_factory=list, description="Inline cue data {start, end, text}")
 
 
 class CaptionExtractionResponse(BaseModel):

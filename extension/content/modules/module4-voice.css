@@ -1,0 +1,26 @@
+.accessable-voice-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 16px;
+  z-index: 2147483640;
+  max-width: 320px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(13, 47, 79, 0.92);
+  color: #ffffff;
+  font: 600 13px/1.4 "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.accessable-voice-toast--warn {
+  background: rgba(180, 40, 40, 0.92);
+}
+
+.accessable-voice-toast--visible {
+  opacity: 1;
+  transform: translateY(0);
+}

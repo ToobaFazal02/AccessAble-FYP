@@ -33,6 +33,13 @@
       pushFix("keyboard_shortcuts");
     }
 
+    if (state.fixesApplied.length > 0) {
+      void globalThis.AccessAbleLogs?.log(
+        "module3", "keyboard_fixes_applied", "success",
+        `${state.fixesApplied.length} fix(es): ${state.fixesApplied.join(", ")}`,
+        window.location.href
+      );
+    }
     void reportFixes();
     return { enabled: true, fixesApplied: [...state.fixesApplied] };
   }

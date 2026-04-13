@@ -102,11 +102,19 @@
     }
 
     const sourceUrl = String(track.src || "").trim();
-    if (!isSafeCaptionUrl(sourceUrl)) {
+    let resolved = "";
+    if (sourceUrl) {
+      try {
+        resolved = new URL(sourceUrl, _context?.pageUrl || window.location.href).toString();
+      } catch (_) {
+        return [];
+      }
+    }
+    if (!isSafeCaptionUrl(resolved)) {
       return [];
     }
 
-    const response = await fetchWithRetry(sourceUrl, {
+    const response = await fetchWithRetry(resolved, {
       method: "GET",
       signal: options.signal,
       timeoutMs,
