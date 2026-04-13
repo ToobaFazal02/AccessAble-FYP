@@ -6,7 +6,8 @@
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "microphone"
   ],
   "host_permissions": [
     "<all_urls>",
@@ -40,9 +41,10 @@
         "content/modules/module1-image.js",
         "content/modules/module2-captions.js",
         "content/modules/module3-keyboard.js",
+        "content/modules/module4-voice.js",
         "content/content.js"
       ],
-      "css": ["content/content.css"],
+      "css": ["content/content.css", "content/modules/module4-voice.css"],
       "run_at": "document_idle"
     }
   ],

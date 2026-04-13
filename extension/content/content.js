@@ -56,6 +56,10 @@
     if (state.captionsModuleEnabled) {
       globalThis.AccessAbleModuleCaptions?.enableHighlights();
     }
+
+    if (state.voiceModuleEnabled) {
+      globalThis.AccessAbleModuleVoice?.enable();
+    }
   }
 
   function registerKeyboardShortcuts() {
@@ -164,6 +168,24 @@
         const result = globalThis.AccessAbleModuleKeyboard?.getStatus() || {
           enabled: false,
           fixesApplied: [],
+        };
+        return { ok: true, data: result };
+      }
+
+      case ACTIONS.VOICE_ENABLE: {
+        const result = globalThis.AccessAbleModuleVoice?.enable() || { enabled: false };
+        return { ok: true, data: result };
+      }
+
+      case ACTIONS.VOICE_DISABLE: {
+        const result = globalThis.AccessAbleModuleVoice?.disable() || { enabled: false };
+        return { ok: true, data: result };
+      }
+
+      case ACTIONS.VOICE_GET_STATUS: {
+        const result = globalThis.AccessAbleModuleVoice?.getStatus() || {
+          enabled: false,
+          commandsExecuted: 0,
         };
         return { ok: true, data: result };
       }

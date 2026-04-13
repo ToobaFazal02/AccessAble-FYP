@@ -13,6 +13,9 @@ const FALLBACK_ACTIONS = Object.freeze({
   CONTENT_TOGGLE_CAPTIONS_MODULE: "content.toggleCaptionsModule",
   CONTENT_SCAN_VIDEO_CANDIDATES: "content.scanVideoCandidates",
   CONTENT_GET_KEYBOARD_STATUS: "content.getKeyboardStatus",
+  VOICE_ENABLE: "voice.enable",
+  VOICE_DISABLE: "voice.disable",
+  VOICE_GET_STATUS: "voice.getStatus",
 });
 
 const contracts = globalThis.AccessAbleContracts || {};
@@ -36,6 +39,7 @@ const popupState = {
   imageModuleEnabled: false,
   keyboardModuleEnabled: false,
   captionsModuleEnabled: false,
+  voiceModuleEnabled: false,
   captionsScanInProgress: false,
   imagesFixed: 0,
   settings: { ...DEFAULT_SETTINGS },
@@ -72,6 +76,9 @@ function cacheElements() {
 
   refs.toggleKeyboardMode = document.getElementById("toggleKeyboardMode");
   refs.keyboardModeStatus = document.getElementById("keyboardModeStatus");
+
+  refs.toggleVoiceMode = document.getElementById("toggleVoiceMode");
+  refs.voiceModeStatus = document.getElementById("voiceModeStatus");
 
   refs.toggleCaptionsMode = document.getElementById("toggleCaptionsMode");
   refs.captionsModeStatus = document.getElementById("captionsModeStatus");
@@ -116,6 +123,7 @@ function bindEvents() {
   refs.pauseResume?.addEventListener("click", () => void onPauseResume());
   refs.toggleImageMode?.addEventListener("click", () => void onToggleImageMode());
   refs.toggleKeyboardMode?.addEventListener("click", () => void onToggleKeyboardMode());
+  refs.toggleVoiceMode?.addEventListener("click", () => void onToggleVoiceMode());
   refs.toggleCaptionsMode?.addEventListener("click", () => void onToggleCaptionsMode());
   refs.scanCaptionsNow?.addEventListener("click", () => void onScanCaptionsNow());
 
@@ -376,6 +384,41 @@ async function onToggleKeyboardMode() {
   }
 }
 
+async function onToggleVoiceMode() {
+  try {
+    const tab = await getActiveTab();
+    if (isRestrictedTab(tab.url)) {
+      updateStatus("Cannot run on browser pages", true);
+      return;
+    }
+
+    const ready = await ensureContentScript(tab.id);
+    if (!ready) {
+      updateStatus("Failed to load page scripts", true);
+      return;
+    }
+
+    const desired = !popupState.voiceModuleEnabled;
+    const response = await sendTabMessage(tab.id, {
+      action: desired ? ACTIONS.VOICE_ENABLE : ACTIONS.VOICE_DISABLE,
+    });
+    if (!response?.ok) {
+      throw new Error(extractResponseError(response, "Voice toggle failed"));
+    }
+
+    popupState.voiceModuleEnabled = Boolean(response.data?.enabled);
+    await persistState({ voiceModuleEnabled: popupState.voiceModuleEnabled });
+    renderVoiceState();
+    updateStatus(
+      popupState.voiceModuleEnabled
+        ? "Voice Commands: Enabled"
+        : "Voice Commands: Disabled"
+    );
+  } catch (error) {
+    updateStatus(error.message || "Voice toggle failed", true);
+  }
+}
+
 async function onToggleCaptionsMode() {
   try {
     const tab = await getActiveTab();
@@ -597,6 +640,7 @@ async function loadStoredState() {
   popupState.imageModuleEnabled = Boolean(storedState.imageModuleEnabled);
   popupState.keyboardModuleEnabled = Boolean(storedState.keyboardModuleEnabled);
   popupState.captionsModuleEnabled = Boolean(storedState.captionsModuleEnabled);
+  popupState.voiceModuleEnabled = Boolean(storedState.voiceModuleEnabled);
   popupState.imagesFixed = normalizeCounter(localData[IMAGES_FIXED_STORAGE_KEY]);
 }
 
@@ -620,6 +664,7 @@ function renderAll() {
   renderReaderState();
   renderImageModeState();
   renderKeyboardState();
+  renderVoiceState();
   renderCaptionsModeState();
   renderCaptionsScanState();
   renderSettings();
@@ -657,6 +702,17 @@ function renderKeyboardState() {
   refs.keyboardModeStatus.textContent = popupState.keyboardModuleEnabled
     ? "Disable Keyboard Assist"
     : "Enable Keyboard Assist";
+}
+
+function renderVoiceState() {
+  if (!refs.toggleVoiceMode || !refs.voiceModeStatus) {
+    return;
+  }
+
+  refs.toggleVoiceMode.classList.toggle("active", popupState.voiceModuleEnabled);
+  refs.voiceModeStatus.textContent = popupState.voiceModuleEnabled
+    ? "Disable Voice Commands"
+    : "Enable Voice Commands";
 }
 
 function renderCaptionsModeState() {
