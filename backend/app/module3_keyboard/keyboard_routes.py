@@ -22,6 +22,13 @@ router = APIRouter(
 )
 
 
+def _format_percent(count: int, total: int) -> str:
+    """Return a rounded percentage string."""
+    if total <= 0:
+        return "0%"
+    return f"{round((count / total) * 100)}%"
+
+
 @router.post(
     "/track-fixes",
     summary="Track Accessibility Fixes",
@@ -123,23 +130,97 @@ async def get_analytics():
     """
     
     try:
+        reports = await cache.list_values("keyboard_stats:")
+
+        total_sites_analyzed = len(reports)
+        total_visits = 0
+        total_fix_occurrences = 0
+        domains_needing_skip_links = 0
+        domains_needing_focus_fixes = 0
+        domains_with_focus_traps = 0
+        per_fix_totals = {}
+        site_rankings = []
+
+        for report in reports:
+            fixes = report.get("fixes", {}) if isinstance(report, dict) else {}
+            visits = int(report.get("total_visits", 0) or 0)
+            non_zero_fix_types = [
+                fix_type for fix_type, count in fixes.items()
+                if isinstance(count, int) and count > 0
+            ]
+            fix_total_for_site = sum(
+                count for count in fixes.values() if isinstance(count, int) and count > 0
+            )
+
+            total_visits += visits
+            total_fix_occurrences += fix_total_for_site
+
+            if fixes.get("skip_link", 0) > 0:
+                domains_needing_skip_links += 1
+            if fixes.get("focus_indicators", 0) > 0:
+                domains_needing_focus_fixes += 1
+            if fixes.get("focus_traps", 0) > 0:
+                domains_with_focus_traps += 1
+
+            for fix_type, count in fixes.items():
+                if isinstance(count, int) and count > 0:
+                    per_fix_totals[fix_type] = per_fix_totals.get(fix_type, 0) + count
+
+            site_rankings.append({
+                "domain": report.get("domain", "unknown"),
+                "fixes_needed": len(non_zero_fix_types),
+                "total_fix_occurrences": fix_total_for_site,
+                "visits": visits,
+            })
+
+        most_broken_sites = sorted(
+            site_rankings,
+            key=lambda item: (
+                item["fixes_needed"],
+                item["total_fix_occurrences"],
+                item["visits"],
+                item["domain"],
+            ),
+            reverse=True,
+        )[:5]
+
+        top_fix_types = [
+            {"fix_type": fix_type, "count": count}
+            for fix_type, count in sorted(
+                per_fix_totals.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
+        ]
+
+        average_fixes_per_visit = round(
+            total_fix_occurrences / total_visits,
+            2,
+        ) if total_visits > 0 else 0.0
+
         return {
             "service": "AccessAble Module 3 Analytics",
             "total_reports_received": METRICS.get("total_requests", 0),
-            "note": "Detailed aggregation requires PostgreSQL (future enhancement)",
-            "sample_insights": {
-                "total_sites_analyzed": 500,
-                "sites_needing_skip_links": "75%",
-                "sites_needing_focus_fixes": "70%",
-                "sites_with_focus_traps": "60%",
-                "average_fixes_per_site": 2.3,
-                "most_broken_sites": [
-                    {"domain": "reddit.com", "fixes_needed": 3, "visits": 127},
-                    {"domain": "twitter.com", "fixes_needed": 3, "visits": 89},
-                    {"domain": "medium.com", "fixes_needed": 2, "visits": 64}
-                ]
+            "cache_backend": cache.backend_name(),
+            "insights": {
+                "total_sites_analyzed": total_sites_analyzed,
+                "total_visits_recorded": total_visits,
+                "sites_needing_skip_links": _format_percent(
+                    domains_needing_skip_links, total_sites_analyzed
+                ),
+                "sites_needing_focus_fixes": _format_percent(
+                    domains_needing_focus_fixes, total_sites_analyzed
+                ),
+                "sites_with_focus_traps": _format_percent(
+                    domains_with_focus_traps, total_sites_analyzed
+                ),
+                "average_fixes_per_visit": average_fixes_per_visit,
+                "top_fix_types": top_fix_types,
+                "most_broken_sites": most_broken_sites,
             },
-            "methodology": "Data collected from AccessAble Extension v3.0 during FYP testing"
+            "methodology": (
+                "Aggregated from cached extension reports submitted to "
+                "/api/v1/keyboard/track-fixes"
+            ),
         }
     
     except Exception as e:

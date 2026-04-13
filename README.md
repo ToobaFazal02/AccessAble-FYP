@@ -21,7 +21,7 @@ services.
 |--------|---------|--------------|
 | Module 1 | AI Image Descriptions | Blind / Low Vision |
 | Module 2 | Video Captions | Deaf / Hard of Hearing |
-| Module 3 | Keyboard Accessibility | Motor Impaired |
+| Module 3 | Keyboard Accessibility & Voice Navigation| Motor Impaired |
 | Module 4 | Screen Reader | Blind / Low Vision |
 
 ---
@@ -115,10 +115,14 @@ API Docs (Swagger):
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
+| POST | `/api/v1/image/analyze` | AI image description |
 | POST | `/api/v1/captions/extract` | Extract video captions |
 | GET | `/api/v1/captions/health` | Caption service health |
-| POST | `/api/v1/images/analyze` | AI image description |
-| POST | `/api/v1/keyboard/track` | Keyboard fix telemetry |
+| POST | `/api/v1/captions/assist/simplify` | Simplify caption cues |
+| POST | `/api/v1/captions/assist/translate` | Translate caption cues |
+| POST | `/api/v1/captions/assist/summarize` | Summarize caption cues |
+| POST | `/api/v1/keyboard/track-fixes` | Keyboard fix telemetry |
+| GET | `/api/v1/keyboard/analytics` | Aggregated keyboard analytics |
 
 ---
 

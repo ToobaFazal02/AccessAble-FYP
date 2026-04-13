@@ -24,8 +24,8 @@ class KeyboardFixReport(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "url": "https://reddit.com/r/programming",
-                "domain": "reddit.com",
+                "url": "https://example.com/article",
+                "domain": "example.com",
                 "fixes_applied": ["skip_link", "focus_indicators", "keyboard_shortcuts"],
                 "user_agent": "AccessAble Extension v3.0.0"
             }

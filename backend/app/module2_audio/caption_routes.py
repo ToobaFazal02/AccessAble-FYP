@@ -16,9 +16,12 @@ from app.module2_audio.caption_schemas import (
     CaptionExtractionRequest,
     CaptionExtractionResponse,
     CaptionTrack,
+    CaptionAssistRequest,
+    CaptionAssistResponse,
     ErrorResponse
 )
 from app.module2_audio.caption_extractor import CaptionExtractor
+from app.module2_audio.caption_assist import transform_caption_cues
 
 
 # Create router for Module 2
@@ -244,3 +247,84 @@ async def module2_health_check():
             "error": ytdlp_status.get("error"),
             "message": "yt-dlp is not installed. Run: pip install yt-dlp"
         }
+
+
+async def _handle_assist_mode(request: CaptionAssistRequest, expected_mode: str) -> Dict:
+    """Shared route handler for caption assist endpoints."""
+    if request.mode != expected_mode:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "Assist mode mismatch",
+                "detail": f"Expected mode '{expected_mode}' but received '{request.mode}'",
+            }
+        )
+
+    if expected_mode == "translate" and not str(request.target_lang or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "Missing target language",
+                "detail": "target_lang is required for translation requests",
+            }
+        )
+
+    try:
+        result = await transform_caption_cues(
+            mode=expected_mode,
+            cues=[cue.model_dump() for cue in request.cues],
+            source_lang=request.source_lang,
+            target_lang=request.target_lang,
+            page_url=request.page_url or "",
+            video_url=request.video_url or "",
+        )
+        return CaptionAssistResponse(**result).model_dump()
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail={
+                "error": "Caption assist failed",
+                "detail": str(e),
+            }
+        ) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "error": "Internal server error",
+                "detail": f"Unexpected caption assist failure: {str(e)}",
+            }
+        ) from e
+
+
+@router.post(
+    "/assist/simplify",
+    response_model=CaptionAssistResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Simplify Caption Cues",
+    description="Rewrite cues into simpler, easier-to-read accessible captions",
+)
+async def simplify_captions(request: CaptionAssistRequest) -> Dict:
+    return await _handle_assist_mode(request, "simplify")
+
+
+@router.post(
+    "/assist/translate",
+    response_model=CaptionAssistResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Translate Caption Cues",
+    description="Translate cues into the requested target language while preserving timing",
+)
+async def translate_captions(request: CaptionAssistRequest) -> Dict:
+    return await _handle_assist_mode(request, "translate")
+
+
+@router.post(
+    "/assist/summarize",
+    response_model=CaptionAssistResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Summarize Caption Cues",
+    description="Compress cues into shorter summary-like caption lines while preserving timing",
+)
+async def summarize_captions(request: CaptionAssistRequest) -> Dict:
+    return await _handle_assist_mode(request, "summarize")

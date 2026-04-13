@@ -83,6 +83,41 @@ class CacheManager:
                 self.memory_cache[cache_key] = value
         except Exception as e:
             log_error(f"Cache set failed for {cache_key}: {e}")
+
+    async def list_values(self, prefix: str) -> list[dict]:
+        """
+        Return all cached JSON objects whose keys start with the given prefix.
+
+        This is mainly used for lightweight analytics aggregation where
+        per-domain keyboard telemetry is stored as individual cache entries.
+        """
+        values: list[dict] = []
+
+        try:
+            if self.redis_client:
+                pattern = f"{prefix}*"
+                for key in self.redis_client.scan_iter(match=pattern):
+                    data = self.redis_client.get(key)
+                    if not data:
+                        continue
+
+                    parsed = json.loads(data) if isinstance(data, str) else data
+                    if isinstance(parsed, dict):
+                        values.append(parsed)
+            else:
+                for key, value in self.memory_cache.items():
+                    if not str(key).startswith(prefix):
+                        continue
+                    if isinstance(value, dict):
+                        values.append(value)
+        except Exception as e:
+            log_error(f"Cache list failed for prefix {prefix}: {e}")
+
+        return values
+
+    def backend_name(self) -> str:
+        """Return the active cache backend label for diagnostics."""
+        return "redis" if self.redis_client else "memory"
     
     def size(self) -> int:
         """Get cache size"""

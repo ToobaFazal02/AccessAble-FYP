@@ -12,10 +12,8 @@ AccessAble backend is a FastAPI service that supports the AccessAble Chrome exte
 
 Multi-module backend API providing comprehensive accessibility solutions:
 - **Module 1**: AI-powered image analysis for automatic alt text generation
-- **Module 2**: Caption services in transition (legacy extraction + upcoming assist APIs)
+- **Module 2**: Caption services in transition (legacy extraction + assist APIs)
 - **Module 3**: Keyboard accessibility analytics and tracking
-=======
->>>>>>> b8c4187 (feat(module2): implement phase-1 client-first captions architecture with adapters, engine, renderer, state, and tests)
 
 ## Architecture Alignment (Client-First + Hybrid Backend)
 
@@ -116,9 +114,7 @@ For Module 2 Phase 1, backend API contracts remain unchanged to avoid breaking e
 │  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
-=======
 ### Module 1
->>>>>>> b8c4187 (feat(module2): implement phase-1 client-first captions architecture with adapters, engine, renderer, state, and tests)
 
 - `POST /api/v1/image/analyze`
 
@@ -126,6 +122,9 @@ For Module 2 Phase 1, backend API contracts remain unchanged to avoid breaking e
 
 - `POST /api/v1/captions/extract`
 - `GET /api/v1/captions/health`
+- `POST /api/v1/captions/assist/simplify`
+- `POST /api/v1/captions/assist/translate`
+- `POST /api/v1/captions/assist/summarize`
 
 Expected response fields consumed by extension include:
 - `video_url`
