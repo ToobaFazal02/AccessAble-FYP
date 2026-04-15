@@ -29,6 +29,10 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 # ============================================================================
 MODEL_NAME = "gemini-flash-latest"  # Updated to latest model
 MAX_CONCURRENT_AI_CALLS = 5
+# Estimated pricing used for logging (USD per 1M tokens).
+# Update these to match the exact model pricing from Gemini docs.
+GEMINI_PRICE_INPUT_PER_1M_USD = float(os.getenv("GEMINI_PRICE_INPUT_PER_1M_USD", "0.10"))
+GEMINI_PRICE_OUTPUT_PER_1M_USD = float(os.getenv("GEMINI_PRICE_OUTPUT_PER_1M_USD", "0.40"))
 
 
 # ============================================================================
@@ -91,6 +95,8 @@ def get_config_info() -> dict:
         "redis_enabled": USE_REDIS,
         "redis_url": REDIS_URL if USE_REDIS else "disabled",
         "model": MODEL_NAME,
+        "gemini_price_input_per_1m_usd": GEMINI_PRICE_INPUT_PER_1M_USD,
+        "gemini_price_output_per_1m_usd": GEMINI_PRICE_OUTPUT_PER_1M_USD,
         "max_image_size_mb": MAX_IMAGE_SIZE_BYTES / 1_000_000,
         "cache_ttl_images_days": CACHE_TTL_SECONDS / 86400,
         "cache_ttl_captions_days": CACHE_TTL_CAPTIONS / 86400,

@@ -6,6 +6,7 @@
     no_tracks: 4000,
     no_cues: 4000,
     backend_unreachable: 7000,
+    assist_unavailable: 4500,
     parser_error: 7000,
     error: 7000,
   });
@@ -45,6 +46,14 @@
           show: true,
           ttlMs,
         };
+      case "assist_unavailable":
+        return {
+          code: stage,
+          message: reason || "AI assist unavailable. Showing original captions",
+          isError: false,
+          show: true,
+          ttlMs,
+        };
       case "parser_error":
         return {
           code: stage,
@@ -58,7 +67,7 @@
           code: stage,
           message: "No active video found",
           isError: false,
-          show: true,
+          show: false,
           ttlMs,
         };
       case "unsupported":
@@ -66,7 +75,7 @@
           code: stage,
           message: "Unsupported video source",
           isError: false,
-          show: true,
+          show: false,
           ttlMs,
         };
       case "error":

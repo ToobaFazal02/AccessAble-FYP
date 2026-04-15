@@ -24,7 +24,7 @@
       mode: "simplify",
       targetLanguage: "",
       timeoutMs: 2500,
-      retries: 1,
+      retries: 0,
     },
     telemetryEnabled: false,
     debug: false,

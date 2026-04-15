@@ -13,6 +13,7 @@
   function createCaptionOverlayRenderer(settings) {
     const state = {
       root: null,
+      metaNode: null,
       textNode: null,
       statusNode: null,
       settings: normalizeOverlaySettings(settings),
@@ -40,11 +41,13 @@
       }
       const existing = document.getElementById(OVERLAY_ID);
       if (existing) {
+        const metaNode = existing.querySelector(".accessable-captions-meta");
         const textNode = existing.querySelector(".accessable-captions-text");
         const statusNode = existing.querySelector(".accessable-captions-status");
 
-        if (textNode && statusNode) {
+        if (metaNode && textNode && statusNode) {
           state.root = existing;
+          state.metaNode = metaNode;
           state.textNode = textNode;
           state.statusNode = statusNode;
           state.mounted = true;
@@ -59,13 +62,24 @@
       }
 
       const root = document.createElement("section");
+      const metaNode = document.createElement("p");
       const textNode = document.createElement("p");
       const statusNode = document.createElement("p");
 
       root.id = OVERLAY_ID;
+      root.appendChild(metaNode);
       root.appendChild(textNode);
       root.appendChild(statusNode);
       (document.body || document.documentElement).appendChild(root);
+
+      metaNode.className = "accessable-captions-meta";
+      metaNode.style.margin = "0 0 6px";
+      metaNode.style.padding = "0";
+      metaNode.style.fontSize = "12px";
+      metaNode.style.fontWeight = "700";
+      metaNode.style.opacity = "0.9";
+      metaNode.style.textTransform = "none";
+      metaNode.style.letterSpacing = "0.01em";
 
       textNode.className = "accessable-captions-text";
       textNode.style.margin = "0";
@@ -76,6 +90,7 @@
       statusNode.style.padding = "0";
 
       state.root = root;
+      state.metaNode = metaNode;
       state.textNode = textNode;
       state.statusNode = statusNode;
       state.mounted = true;
@@ -93,6 +108,7 @@
         state.root.remove();
       }
       state.root = null;
+      state.metaNode = null;
       state.textNode = null;
       state.statusNode = null;
       state.mounted = false;
@@ -109,21 +125,25 @@
         return;
       }
       mount();
-      if (!state.root || !state.textNode || !state.statusNode || !isOwner()) {
+      if (!state.root || !state.metaNode || !state.textNode || !state.statusNode || !isOwner()) {
         return;
       }
       state.mode = "cue";
       clearStatusTimer();
       state.root.style.display = "block";
+      state.metaNode.style.display = "block";
       state.textNode.style.display = "block";
       state.statusNode.style.display = "none";
+      const cueLang = String(cue.lang || "und").toUpperCase();
+      const cueKind = cue.isAuto ? "AUTO" : "MANUAL";
+      state.metaNode.textContent = `AccessAble Captions · ${cueLang} · ${cueKind}`;
       state.textNode.textContent = cue.text;
       state.statusNode.textContent = "";
     }
 
     function showStatus(message, isError, options = {}) {
       mount();
-      if (!state.root || !state.textNode || !state.statusNode || !isOwner()) {
+      if (!state.root || !state.metaNode || !state.textNode || !state.statusNode || !isOwner()) {
         return;
       }
       const text = String(message || "").trim();
@@ -144,6 +164,7 @@
       state.mode = "status";
       clearStatusTimer();
       state.root.style.display = "block";
+      state.metaNode.style.display = "none";
       state.textNode.style.display = "none";
       state.statusNode.style.display = "block";
       state.statusNode.textContent = text;
@@ -164,10 +185,11 @@
     }
 
     function clear() {
-      if (!state.root || !state.textNode || !state.statusNode || !isOwner()) {
+      if (!state.root || !state.metaNode || !state.textNode || !state.statusNode || !isOwner()) {
         return;
       }
       clearStatusTimer();
+      state.metaNode.textContent = "";
       state.textNode.textContent = "";
       state.statusNode.textContent = "";
       state.root.style.display = "none";
@@ -187,7 +209,8 @@
       state.root.style.lineHeight = String(settings.lineHeight);
       state.root.style.color = settings.textColor;
       state.root.style.background = toRgba(settings.backgroundColor, settings.backgroundOpacity);
-      state.root.style.boxShadow = "0 4px 20px rgba(0,0,0,0.35)";
+      state.root.style.boxShadow = "0 10px 28px rgba(0,0,0,0.42)";
+      state.root.style.backdropFilter = "blur(2px)";
 
       if (settings.position === "top") {
         state.root.style.top = "8vh";
@@ -198,7 +221,7 @@
         state.root.style.bottom = "";
         state.root.style.transform = "translate(-50%, -50%)";
       } else {
-        state.root.style.bottom = "8vh";
+        state.root.style.bottom = "max(8vh, 64px)";
         state.root.style.top = "";
         state.root.style.transform = "translateX(-50%)";
       }
@@ -225,6 +248,8 @@
       state.root.style.fontFamily = '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif';
       state.root.style.whiteSpace = "pre-wrap";
       state.root.style.wordBreak = "break-word";
+      state.root.style.transition = "opacity 120ms ease";
+      state.root.style.opacity = "0.98";
     }
 
     function clampInteger(value, min, max, fallback) {

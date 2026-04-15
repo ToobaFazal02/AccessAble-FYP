@@ -30,6 +30,13 @@
       lastError: "",
       lastStage: "",
       assistRequestId: 0,
+      assist: {
+        enabled: false,
+        mode: "",
+        applied: false,
+        provider: "",
+        lastError: "",
+      },
     };
 
     return {
@@ -79,6 +86,13 @@
       state.contextKey = "";
       state.activeCueIndex = -1;
       state.lastError = "";
+      state.assist = {
+        enabled: false,
+        mode: "",
+        applied: false,
+        provider: "",
+        lastError: "",
+      };
 
       if (!context?.videoElement) {
         safeStatus({
@@ -256,6 +270,11 @@
         cueCount: Array.isArray(state.cues) ? state.cues.length : 0,
         available: Boolean(state.track && Array.isArray(state.cues) && state.cues.length > 0),
         lastError: state.lastError,
+        assistEnabled: state.assist.enabled === true,
+        assistMode: state.assist.mode || "",
+        assistApplied: state.assist.applied === true,
+        assistProvider: state.assist.provider || "",
+        assistLastError: state.assist.lastError || "",
       };
     }
 
@@ -331,6 +350,10 @@
       if (!["simplify", "translate", "summarize"].includes(mode)) {
         return;
       }
+      state.assist.enabled = true;
+      state.assist.mode = mode;
+      state.assist.applied = false;
+      state.assist.lastError = "";
 
       if (!Array.isArray(baseCues) || baseCues.length === 0) {
         return;
@@ -361,6 +384,8 @@
         if (Array.isArray(assisted) && assisted.length > 0) {
           state.cues = assisted;
           state.activeCueIndex = -1;
+          state.assist.applied = true;
+          state.assist.provider = "llm_assist";
           debugLog(Boolean(state.settings?.debug), "assist_applied", {
             mode,
             cueCount: assisted.length,
@@ -371,6 +396,16 @@
         if (error?.name === "AbortError") {
           return;
         }
+        if (error?.code === "assist_quota_exceeded") {
+          safeStatus({
+            stage: "assist_unavailable",
+            available: true,
+            adapter: state.adapter?.name || "",
+            reason: "AI assist quota reached. Showing original captions.",
+          });
+        }
+        state.assist.applied = false;
+        state.assist.lastError = error?.message || "Assist request failed";
         debugLog(Boolean(state.settings?.debug), "assist_failed", {
           mode,
           error: error?.message || "Assist request failed",

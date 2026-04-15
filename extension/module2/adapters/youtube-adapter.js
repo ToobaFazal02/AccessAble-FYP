@@ -437,10 +437,21 @@
       debugLog(debug, "backend_fallback_failed", {
         error: error?.message || "Backend fallback failed",
       });
+      const statusCode = Number(error?.statusCode || error?.status || 0);
+      const message = String(error?.message || "");
+      if (
+        statusCode === 400 ||
+        /captions?\s+are\s+disabled/i.test(message) ||
+        /no\s+caption/i.test(message)
+      ) {
+        // Treat disabled/missing captions as content unavailability, not backend outage.
+        return [];
+      }
       const backendError = new Error(
         error?.message || "Caption backend unavailable"
       );
       backendError.code = "backend_unreachable";
+      backendError.statusCode = statusCode || 0;
       throw backendError;
     }
   }
@@ -881,7 +892,10 @@
           return;
         }
         if (!response?.ok) {
-          reject(new Error(response?.error?.message || "Runtime message failed"));
+          const error = new Error(response?.error?.message || "Runtime message failed");
+          error.statusCode = Number(response?.error?.statusCode || 0);
+          error.code = String(response?.error?.code || "");
+          reject(error);
           return;
         }
         resolve(response);

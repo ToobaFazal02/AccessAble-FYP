@@ -7,16 +7,49 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Iterable
 
 from google import genai
 
 from app.config import GEMINI_API_KEY, MODEL_NAME
+from app.ai_usage import UsageSnapshot, extract_usage_snapshot
 from app.logger import log_error, log_info, log_success
 
 
 _assist_client = genai.Client(api_key=GEMINI_API_KEY)
 _ASSIST_CHUNK_SIZE = 60
+_MAX_ASSIST_CUES = 180
+_PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts" / "module2"
+_PROMPT_CACHE: dict[str, str] = {}
+
+
+def _load_prompt_template(mode: str) -> str:
+    """Load prompt template from backend/prompts/module2/<mode>.md with in-memory cache."""
+    if mode in _PROMPT_CACHE:
+        return _PROMPT_CACHE[mode]
+
+    prompt_path = _PROMPTS_DIR / f"{mode}.md"
+    if prompt_path.exists():
+        template = prompt_path.read_text(encoding="utf-8").strip()
+    else:
+        template = (
+            "You transform caption cues for an accessibility browser extension.\n"
+            "Mode: {mode}\n"
+            "Source language: {source_lang}\n"
+            "Target language: {target_lang}\n"
+            "Page URL: {page_url}\n"
+            "Video URL: {video_url}\n"
+            "Rules:\n"
+            "- Keep the exact same number of cues.\n"
+            "- Preserve cue order.\n"
+            "- Do not leave cue text empty.\n"
+            "- Return JSON only.\n"
+            "Input cues JSON:\n{cues_json}\n"
+        )
+
+    _PROMPT_CACHE[mode] = template
+    return template
 
 
 def _chunk_items(items: list[dict], size: int) -> Iterable[list[dict]]:
@@ -94,34 +127,17 @@ def _build_prompt(
     video_url: str,
 ) -> str:
     """Build a strict JSON-only prompt for cue transformation."""
+    template = _load_prompt_template(mode)
     instructions = _mode_instruction(mode, source_lang, target_lang)
-    return f"""
-You transform caption cues for an accessibility browser extension.
-
-Task:
-- Mode: {mode}
-- Source language: {source_lang or 'und'}
-- Target language: {target_lang or ''}
-- Page URL: {page_url or ''}
-- Video URL: {video_url or ''}
-
-Rules:
-- {instructions}
-- Keep the exact same number of cues as the input.
-- Preserve cue order.
-- Do not leave any cue text empty.
-- Return JSON only, with no markdown.
-- Output schema:
-  {{
-    "lang": "<output-language-code>",
-    "cues": [
-      {{"start": 0.0, "end": 1.0, "text": "..." }}
-    ]
-  }}
-
-Input cues JSON:
-{json.dumps(cues, ensure_ascii=True)}
-""".strip()
+    return template.format(
+        mode=mode,
+        source_lang=source_lang or "und",
+        target_lang=target_lang or "",
+        page_url=page_url or "",
+        video_url=video_url or "",
+        instructions=instructions,
+        cues_json=json.dumps(cues, ensure_ascii=True),
+    ).strip()
 
 
 async def _transform_chunk(
@@ -131,7 +147,7 @@ async def _transform_chunk(
     target_lang: str,
     page_url: str,
     video_url: str,
-) -> tuple[str, list[dict]]:
+) -> tuple[str, list[dict], UsageSnapshot]:
     """Transform a single cue chunk with Gemini."""
 
     prompt = _build_prompt(
@@ -152,7 +168,8 @@ async def _transform_chunk(
     loop = asyncio.get_running_loop()
     response = await loop.run_in_executor(None, _run_model)
     payload = _extract_json_object(getattr(response, "text", ""))
-    return _normalize_ai_cues(chunk, payload)
+    usage = extract_usage_snapshot(response)
+    return (*_normalize_ai_cues(chunk, payload), usage)
 
 
 async def transform_caption_cues(
@@ -177,13 +194,22 @@ async def transform_caption_cues(
         raise ValueError("At least one cue is required")
 
     log_info(f"[Module 2 Assist] Processing {len(cues)} cues with mode '{mode}'")
+    if len(cues) > _MAX_ASSIST_CUES:
+        log_info(
+            f"[Module 2 Assist] Truncating cues from {len(cues)} to {_MAX_ASSIST_CUES} to control cost"
+        )
+        cues = cues[:_MAX_ASSIST_CUES]
 
     transformed_cues = []
     resolved_lang = target_lang.strip().lower() if mode == "translate" else source_lang.strip().lower()
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_tokens = 0
+    total_estimated_cost = 0.0
 
     try:
         for chunk in _chunk_items(cues, _ASSIST_CHUNK_SIZE):
-            chunk_lang, chunk_result = await _transform_chunk(
+            chunk_lang, chunk_result, usage = await _transform_chunk(
                 mode=mode,
                 chunk=chunk,
                 source_lang=source_lang,
@@ -194,9 +220,19 @@ async def transform_caption_cues(
             if chunk_lang:
                 resolved_lang = chunk_lang
             transformed_cues.extend(chunk_result)
+            total_input_tokens += usage.input_tokens
+            total_output_tokens += usage.output_tokens
+            total_tokens += usage.total_tokens
+            total_estimated_cost += usage.estimated_cost_usd
 
         log_success(
             f"[Module 2 Assist] Completed mode '{mode}' for {len(transformed_cues)} cues"
+        )
+        log_info(
+            "[Module 2 Assist] Usage "
+            f"mode={mode} input_tokens={total_input_tokens} "
+            f"output_tokens={total_output_tokens} total_tokens={total_tokens} "
+            f"estimated_cost_usd={round(total_estimated_cost, 8)}"
         )
 
         return {

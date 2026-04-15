@@ -9,6 +9,7 @@ from google import genai
 from fastapi import HTTPException
 
 from app.config import GEMINI_API_KEY, MODEL_NAME, PROMPT_PATH, MAX_CONCURRENT_AI_CALLS
+from app.ai_usage import extract_usage_snapshot
 from app.logger import log_success, log_error
 from app.metrics import METRICS
 
@@ -46,9 +47,17 @@ async def analyze_image_with_ai(image: Image.Image) -> tuple[str, float]:
             latency = round(end_time - start_time, 2)
             
             description = response.text.strip()
+            usage = extract_usage_snapshot(response)
             
             METRICS["ai_calls"] += 1
             log_success(f"AI response received in {latency}s: {description[:60]}...")
+            log_success(
+                "[Module 1 Image] Usage "
+                f"input_tokens={usage.input_tokens} "
+                f"output_tokens={usage.output_tokens} "
+                f"total_tokens={usage.total_tokens} "
+                f"estimated_cost_usd={usage.estimated_cost_usd}"
+            )
             
             return description, latency
         

@@ -100,7 +100,13 @@
       available: Boolean(runtime.available),
       adapter: runtime.adapter || "",
       trackLang: runtime.trackLang || "",
+      isAuto: Boolean(runtime.isAuto),
       cueCount: Number(runtime.cueCount || 0),
+      assistEnabled: Boolean(runtime.assistEnabled),
+      assistMode: runtime.assistMode || "",
+      assistApplied: Boolean(runtime.assistApplied),
+      assistProvider: runtime.assistProvider || "",
+      assistLastError: runtime.assistLastError || "",
       stage: state.engineStatus.stage,
       reason: state.engineStatus.reason || "",
     };

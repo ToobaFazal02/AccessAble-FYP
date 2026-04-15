@@ -12,6 +12,8 @@ const FALLBACK_ACTIONS = Object.freeze({
   CONTENT_TOGGLE_KEYBOARD_MODULE: "content.toggleKeyboardModule",
   CONTENT_TOGGLE_CAPTIONS_MODULE: "content.toggleCaptionsModule",
   CONTENT_SCAN_VIDEO_CANDIDATES: "content.scanVideoCandidates",
+  CONTENT_UPDATE_CAPTIONS_SETTINGS: "content.updateCaptionsSettings",
+  CONTENT_GET_CAPTIONS_STATUS: "content.getCaptionsStatus",
   CONTENT_GET_KEYBOARD_STATUS: "content.getKeyboardStatus",
   VOICE_ENABLE: "voice.enable",
   VOICE_DISABLE: "voice.disable",
@@ -29,6 +31,15 @@ const DEFAULT_SETTINGS = contracts.DEFAULT_SETTINGS || {
   pitch: 1,
   volume: 1,
 };
+const DEFAULT_CAPTIONS_SETTINGS = contracts.DEFAULT_CAPTIONS_SETTINGS || {
+  enabled: true,
+  preferredLanguages: ["en"],
+  assist: {
+    enabled: false,
+    mode: "simplify",
+    targetLanguage: "",
+  },
+};
 const IMAGE_ALT_INJECTED_ACTION = "image.altInjected";
 const IMAGES_FIXED_STORAGE_KEY = "accessable_images_fixed_count";
 const contentInjectionTasks = new Map();
@@ -43,6 +54,7 @@ const popupState = {
   captionsScanInProgress: false,
   imagesFixed: 0,
   settings: { ...DEFAULT_SETTINGS },
+  captionsSettings: cloneCaptionsDefaults(),
 };
 
 const refs = {};
@@ -84,6 +96,12 @@ function cacheElements() {
   refs.captionsModeStatus = document.getElementById("captionsModeStatus");
   refs.scanCaptionsNow = document.getElementById("scanCaptionsNow");
   refs.captionsScanStatus = document.getElementById("captionsScanStatus");
+  refs.captionLangsInput = document.getElementById("captionLangsInput");
+  refs.assistEnabled = document.getElementById("assistEnabled");
+  refs.assistMode = document.getElementById("assistMode");
+  refs.targetLanguage = document.getElementById("targetLanguage");
+  refs.applyCaptionPrefs = document.getElementById("applyCaptionPrefs");
+  refs.captionStatusHint = document.getElementById("captionStatusHint");
 
   refs.speed = document.getElementById("speed");
   refs.speedValue = document.getElementById("speedValue");
@@ -126,6 +144,7 @@ function bindEvents() {
   refs.toggleVoiceMode?.addEventListener("click", () => void onToggleVoiceMode());
   refs.toggleCaptionsMode?.addEventListener("click", () => void onToggleCaptionsMode());
   refs.scanCaptionsNow?.addEventListener("click", () => void onScanCaptionsNow());
+  refs.applyCaptionPrefs?.addEventListener("click", () => void onApplyCaptionPreferences());
 
   refs.speed?.addEventListener("input", (event) =>
     onSettingChange("speed", Number(event.target.value))
@@ -445,11 +464,13 @@ async function onToggleCaptionsMode() {
     popupState.captionsModuleEnabled = Boolean(response.data?.highlighted);
     await persistState({ captionsModuleEnabled: popupState.captionsModuleEnabled });
     renderCaptionsModeState();
-    updateStatus(
-      popupState.captionsModuleEnabled
-        ? "Video Captions: Enabled"
-        : "Video Captions: Disabled"
-    );
+    if (popupState.captionsModuleEnabled) {
+      await syncCaptionsRuntimeStatusWithRetry(tab.id);
+      updateStatus("Video Captions: Enabled");
+    } else {
+      setCaptionHint("Status: caption module disabled");
+      updateStatus("Video Captions: Disabled");
+    }
   } catch (error) {
     updateStatus(error.message || "Video captions toggle failed", true);
   }
@@ -610,6 +631,7 @@ async function loadStoredState() {
     chrome.storage.sync.get([
       STORAGE_KEYS.SETTINGS,
       STORAGE_KEYS.STATE,
+      STORAGE_KEYS.CAPTIONS_SETTINGS,
       "speed",
       "pitch",
       "volume",
@@ -634,6 +656,7 @@ async function loadStoredState() {
   }
 
   popupState.settings = storedSettings;
+  popupState.captionsSettings = normalizeCaptionsSettings(data[STORAGE_KEYS.CAPTIONS_SETTINGS]);
 
   const storedState = Object.assign({}, data[STORAGE_KEYS.STATE] || {});
   popupState.readerEnabled = Boolean(storedState.readerEnabled);
@@ -668,7 +691,9 @@ function renderAll() {
   renderCaptionsModeState();
   renderCaptionsScanState();
   renderSettings();
+  renderCaptionSettings();
   renderImagesFixedCounter();
+  void syncCaptionsStatusFromActiveTab();
 }
 
 function renderReaderState() {
@@ -749,6 +774,24 @@ function renderSettings() {
   if (refs.volume && refs.volumeValue) {
     refs.volume.value = String(popupState.settings.volume);
     refs.volumeValue.textContent = `${Math.round(popupState.settings.volume * 100)}%`;
+  }
+}
+
+function renderCaptionSettings() {
+  const settings = normalizeCaptionsSettings(popupState.captionsSettings);
+  popupState.captionsSettings = settings;
+
+  if (refs.captionLangsInput) {
+    refs.captionLangsInput.value = settings.preferredLanguages.join(",");
+  }
+  if (refs.assistEnabled) {
+    refs.assistEnabled.checked = settings.assist.enabled === true;
+  }
+  if (refs.assistMode) {
+    refs.assistMode.value = settings.assist.mode || "simplify";
+  }
+  if (refs.targetLanguage) {
+    refs.targetLanguage.value = settings.assist.targetLanguage || "";
   }
 }
 
@@ -886,4 +929,196 @@ async function checkBackend() {
   } catch (_) {
     updateStatus("Backend unavailable", true);
   }
+}
+
+async function onApplyCaptionPreferences() {
+  try {
+    const nextSettings = buildCaptionsSettingsFromInputs();
+    popupState.captionsSettings = nextSettings;
+    renderCaptionSettings();
+    await persistCaptionSettings();
+
+    const tab = await getActiveTab();
+    if (!tab?.id || isRestrictedTab(tab.url)) {
+      setCaptionHint("Status: saved locally. Open a website video tab to apply.");
+      updateStatus("Caption preferences saved");
+      return;
+    }
+
+    const ready = await ensureContentScript(tab.id);
+    if (!ready) {
+      setCaptionHint("Status: settings saved, but active tab scripts are unavailable.");
+      updateStatus("Caption preferences saved", true);
+      return;
+    }
+
+    const response = await sendTabMessage(tab.id, {
+      action: ACTIONS.CONTENT_UPDATE_CAPTIONS_SETTINGS,
+      payload: { settings: nextSettings },
+    });
+    if (!response?.ok) {
+      throw new Error(extractResponseError(response, "Could not apply caption settings"));
+    }
+
+    setCaptionHint("Status: caption preferences applied to active tab.");
+    await syncCaptionsRuntimeStatusWithRetry(tab.id);
+    updateStatus("Caption preferences applied");
+  } catch (error) {
+    updateStatus(error.message || "Failed to apply caption settings", true);
+  }
+}
+
+function buildCaptionsSettingsFromInputs() {
+  const preferredLanguages = parseLanguagePriority(refs.captionLangsInput?.value || "");
+  const assistMode = String(refs.assistMode?.value || "simplify").toLowerCase();
+  const assistEnabled = refs.assistEnabled?.checked === true;
+  const targetLanguage = String(refs.targetLanguage?.value || "").trim().toLowerCase();
+
+  return normalizeCaptionsSettings({
+    ...popupState.captionsSettings,
+    preferredLanguages,
+    assist: {
+      ...(popupState.captionsSettings?.assist || {}),
+      enabled: assistEnabled,
+      mode: ["simplify", "translate", "summarize"].includes(assistMode) ? assistMode : "simplify",
+      targetLanguage,
+    },
+  });
+}
+
+async function persistCaptionSettings() {
+  await chrome.storage.sync.set({
+    [STORAGE_KEYS.CAPTIONS_SETTINGS]: popupState.captionsSettings,
+  });
+}
+
+function normalizeCaptionsSettings(raw) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const defaults = cloneCaptionsDefaults();
+  const preferredLanguages = parseLanguagePriority(source.preferredLanguages || defaults.preferredLanguages);
+  const assistSource = source.assist && typeof source.assist === "object" ? source.assist : {};
+  const mode = String(assistSource.mode || defaults.assist.mode || "simplify").toLowerCase();
+  return {
+    ...defaults,
+    ...source,
+    preferredLanguages,
+    assist: {
+      ...defaults.assist,
+      ...assistSource,
+      enabled: assistSource.enabled === true,
+      mode: ["simplify", "translate", "summarize"].includes(mode) ? mode : "simplify",
+      targetLanguage: String(assistSource.targetLanguage || "").trim().toLowerCase(),
+    },
+  };
+}
+
+function parseLanguagePriority(value) {
+  const list = Array.isArray(value)
+    ? value
+    : String(value || "")
+        .split(",")
+        .map((item) => item.trim().toLowerCase())
+        .filter(Boolean);
+
+  const seen = new Set();
+  const normalized = [];
+  for (const item of list) {
+    if (seen.has(item)) {
+      continue;
+    }
+    seen.add(item);
+    normalized.push(item);
+  }
+  if (normalized.length === 0) {
+    normalized.push("en");
+  }
+  return normalized.slice(0, 6);
+}
+
+function cloneCaptionsDefaults() {
+  return {
+    ...DEFAULT_CAPTIONS_SETTINGS,
+    preferredLanguages: Array.isArray(DEFAULT_CAPTIONS_SETTINGS.preferredLanguages)
+      ? [...DEFAULT_CAPTIONS_SETTINGS.preferredLanguages]
+      : ["en"],
+    assist: {
+      ...(DEFAULT_CAPTIONS_SETTINGS.assist || {}),
+    },
+  };
+}
+
+async function syncCaptionsStatusFromActiveTab() {
+  try {
+    const tab = await getActiveTab();
+    if (!tab?.id || isRestrictedTab(tab.url)) {
+      setCaptionHint("Status: open a website video tab to inspect captions.");
+      return;
+    }
+    const ready = await ensureContentScript(tab.id);
+    if (!ready) {
+      return;
+    }
+    await syncCaptionsRuntimeStatusWithRetry(tab.id);
+  } catch (_) {
+    // Non-blocking for popup initialization.
+  }
+}
+
+async function syncCaptionsRuntimeStatusWithRetry(tabId) {
+  const MAX_ATTEMPTS = 4;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    const info = await syncCaptionsRuntimeStatus(tabId);
+    if (info?.available) {
+      return info;
+    }
+    // During rebind, status may briefly report unavailable.
+    if (attempt < MAX_ATTEMPTS - 1) {
+      await delay(350);
+    }
+  }
+  return null;
+}
+
+async function syncCaptionsRuntimeStatus(tabId) {
+  const response = await sendTabMessage(tabId, {
+    action: ACTIONS.CONTENT_GET_CAPTIONS_STATUS,
+  });
+  if (!response?.ok || !response.data) {
+    setCaptionHint("Status: caption runtime not available");
+    return null;
+  }
+
+  const info = response.data;
+  if (!info.available) {
+    const assistTail = info.assistLastError
+      ? ` | AI assist: ${String(info.assistLastError).slice(0, 80)}`
+      : "";
+    setCaptionHint(
+      `Status: ${info.stage || "idle"}${info.reason ? ` - ${info.reason}` : ""}${assistTail}`
+    );
+    return info;
+  }
+
+  const autoLabel = info.isAuto ? "auto-generated" : "manual";
+  const assistPart = info.assistEnabled
+    ? info.assistApplied
+      ? ` | AI: ${info.assistMode || "assist"} applied`
+      : info.assistLastError
+        ? " | AI: fallback to original captions"
+        : ` | AI: ${info.assistMode || "assist"} pending`
+    : "";
+  setCaptionHint(
+    `Active track: ${info.trackLang || "und"} (${autoLabel}), cues: ${Number(info.cueCount || 0)}${assistPart}`
+  );
+  return info;
+}
+
+function setCaptionHint(text) {
+  if (refs.captionStatusHint) {
+    refs.captionStatusHint.textContent = text;
+  }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }

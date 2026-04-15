@@ -14,6 +14,8 @@
   const debugLog = utils.debugLog || (() => {});
 
   const MAX_ASSIST_CUES = 400;
+  const QUOTA_COOLDOWN_MS = 60 * 1000;
+  let quotaBlockedUntil = 0;
 
   const ASSIST_ACTIONS = Object.freeze({
     simplify: ACTIONS.CAPTIONS_ASSIST_SIMPLIFY,
@@ -45,6 +47,13 @@
 
     if (signal?.aborted) {
       throw createAbortError();
+    }
+
+    if (Date.now() < quotaBlockedUntil) {
+      debugLog(debug, "assist_quota_cooldown", {
+        waitMs: quotaBlockedUntil - Date.now(),
+      });
+      return null;
     }
 
     const normalizedCues = normalizeOutgoingCues(cues, track);
@@ -166,7 +175,14 @@
           return;
         }
         if (!response?.ok) {
-          reject(new Error(response?.error?.message || "Assist request failed"));
+          const error = new Error(response?.error?.message || "Assist request failed");
+          error.statusCode = Number(response?.error?.statusCode || 0);
+          error.code = String(response?.error?.code || "");
+          if (error.statusCode === 429) {
+            quotaBlockedUntil = Date.now() + QUOTA_COOLDOWN_MS;
+            error.code = "assist_quota_exceeded";
+          }
+          reject(error);
           return;
         }
         resolve(response);

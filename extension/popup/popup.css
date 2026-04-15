@@ -319,6 +319,64 @@ h2 {
   font-weight: 700;
 }
 
+.module2-settings-card h2 {
+  margin-bottom: 8px;
+}
+
+.text-input,
+.select-input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(130, 146, 206, 0.44);
+  border-radius: 10px;
+  background: rgba(42, 48, 79, 0.9);
+  color: #edf2ff;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+
+.select-input {
+  cursor: pointer;
+}
+
+.field-hint {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.setting-checkbox label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.caption-settings-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.caption-settings-row .setting-item {
+  margin-top: 0;
+}
+
+.caption-settings-row .setting-item label {
+  min-height: 18px;
+}
+
+.caption-settings-row .select-input {
+  min-height: 40px;
+  line-height: 1.2;
+}
+
+.module2-settings-card .action-button {
+  margin-top: 8px;
+}
+
 .shortcuts-list {
   list-style: none;
   margin: 0;

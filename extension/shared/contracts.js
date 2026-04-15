@@ -33,6 +33,8 @@
 
     CONTENT_TOGGLE_CAPTIONS_MODULE: "content.toggleCaptionsModule",
     CONTENT_SCAN_VIDEO_CANDIDATES: "content.scanVideoCandidates",
+    CONTENT_UPDATE_CAPTIONS_SETTINGS: "content.updateCaptionsSettings",
+    CONTENT_GET_CAPTIONS_STATUS: "content.getCaptionsStatus",
 
     VOICE_ENABLE: "voice.enable",
     VOICE_DISABLE: "voice.disable",
@@ -89,7 +91,7 @@
       mode: "simplify",
       targetLanguage: "",
       timeoutMs: 2500,
-      retries: 1,
+      retries: 0,
     }),
     telemetryEnabled: false,
     debug: false,

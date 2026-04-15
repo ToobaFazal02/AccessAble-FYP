@@ -280,11 +280,21 @@ async def _handle_assist_mode(request: CaptionAssistRequest, expected_mode: str)
         )
         return CaptionAssistResponse(**result).model_dump()
     except RuntimeError as e:
+        detail = str(e)
+        detail_lc = detail.lower()
+        if "resource_exhausted" in detail_lc or "quota exceeded" in detail_lc:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "error": "Caption assist quota exceeded",
+                    "detail": detail,
+                }
+            ) from e
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail={
                 "error": "Caption assist failed",
-                "detail": str(e),
+                "detail": detail,
             }
         ) from e
     except Exception as e:

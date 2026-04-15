@@ -156,6 +156,22 @@
         return { ok: true, data: result || { highlighted: enabled } };
       }
 
+      case ACTIONS.CONTENT_UPDATE_CAPTIONS_SETTINGS: {
+        const partial = request?.payload?.settings;
+        const result = globalThis.AccessAbleModule2?.updateSettings?.(partial || {}) || {};
+        return { ok: true, data: result };
+      }
+
+      case ACTIONS.CONTENT_GET_CAPTIONS_STATUS: {
+        const result = globalThis.AccessAbleModule2?.getStatus?.() || {
+          enabled: false,
+          available: false,
+          stage: "idle",
+          reason: "",
+        };
+        return { ok: true, data: result };
+      }
+
       case ACTIONS.CONTENT_TOGGLE_KEYBOARD_MODULE: {
         const enabled = Boolean(request?.payload?.enabled);
         const result = enabled

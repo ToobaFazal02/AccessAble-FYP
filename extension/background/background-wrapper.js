@@ -868,7 +868,13 @@ async function requestWithRetryBounded({
       return response;
     }
 
-    await sleep(300 * (attempt + 1));
+    if (!shouldRetry(response.status)) {
+      return response;
+    }
+
+    const retryAfterMs = Math.max(0, Number(response.retryAfterMs || 0));
+    const fallbackDelayMs = 300 * (attempt + 1);
+    await sleep(retryAfterMs > 0 ? retryAfterMs : fallbackDelayMs);
     attempt += 1;
   }
 
