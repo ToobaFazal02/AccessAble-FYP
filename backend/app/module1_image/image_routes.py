@@ -11,7 +11,7 @@ from app.metrics import METRICS, update_avg_response_time
 from app.logger import log_info, log_success, log_error, log_warning
 from app.config import MODEL_NAME
 
-from app.module1_image.image_service import download_image_from_url, estimate_confidence
+from app.module1_image.image_service import download_image_from_url, downscale_for_vision, estimate_confidence
 from app.module1_image.gemini_client import analyze_image_with_ai
 
 
@@ -75,7 +75,9 @@ async def analyze_image(request: ImageRequest):
     
     # Step 2: Download image
     try:
-        image = await download_image_from_url(image_url)
+        page_ref = str(request.page_url) if request.page_url else None
+        image = await download_image_from_url(image_url, page_referer=page_ref)
+        image = downscale_for_vision(image)
     except ValueError as e:
         METRICS["errors"] += 1
         log_error(f"Image validation failed: {e}")

@@ -6,13 +6,24 @@
   const IMAGES_FIXED_STORAGE_KEY = "accessable_images_fixed_count";
   const SUCCESS_STYLE_ID = "accessable-image-success-style";
 
+  /** Avoid hammering the page when many imgs load (galleries, SPAs). */
+  const LOAD_RESCHEDULE_GAP_MS = 1400;
+  /** Coalesce burst scans (IO + mutation + timer). */
+  const MIN_GAP_BETWEEN_SCANS_MS = 700;
+  const MAX_CONCURRENT_IMAGE_ANALYSIS = 2;
+
   const state = {
     enabled: false,
     observer: null,
+    intersectionObserver: null,
+    imageLoadCaptureBound: false,
     isScanning: false,
     scannedIds: new Set(),
     counterWriteChain: Promise.resolve(),
     fixedCountCache: null,
+    scanDebounceTimer: null,
+    loadThrottleNextOk: 0,
+    lastScanFinishedAt: 0,
   };
 
   // Logging utility — initialized once for the whole extension content context.
@@ -65,17 +76,32 @@
 
     ensureSuccessStyle();
     state.enabled = true;
-    void scanNow();
+    attachIntersectionPipeline();
+    attachImageLoadCapture();
+    void scanNow({ force: true });
     attachObserver();
     return { enabled: true };
   }
 
   function disable() {
     state.enabled = false;
+    window.clearTimeout(state.scanDebounceTimer);
+    state.scanDebounceTimer = null;
     if (state.observer) {
       state.observer.disconnect();
       state.observer = null;
     }
+    if (state.intersectionObserver) {
+      state.intersectionObserver.disconnect();
+      state.intersectionObserver = null;
+    }
+    if (state.imageLoadCaptureBound) {
+      document.removeEventListener("load", onImageLoadCapture, true);
+      state.imageLoadCaptureBound = false;
+    }
+    document
+      .querySelectorAll("img[data-accessable-io-bound='1']")
+      .forEach((node) => node.removeAttribute("data-accessable-io-bound"));
     clearHighlights();
     return { enabled: false };
   }
@@ -112,20 +138,132 @@
 
       if (foundCandidate) {
         window.clearTimeout(attachObserver._timer);
-        attachObserver._timer = window.setTimeout(() => scanNow(), 600);
+        attachObserver._timer = window.setTimeout(() => scanNow(), 900);
       }
     });
 
+    // Do NOT observe src/srcset attribute churn — React/lazy loaders fire constantly and freeze the tab.
     state.observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
     });
   }
 
-  async function scanNow() {
+  function scheduleDebouncedScan(delayMs) {
+    window.clearTimeout(state.scanDebounceTimer);
+    const delay = typeof delayMs === "number" ? delayMs : 550;
+    state.scanDebounceTimer = window.setTimeout(() => {
+      state.scanDebounceTimer = null;
+      void scanNow();
+    }, delay);
+  }
+
+  function attachIntersectionPipeline() {
+    if (state.intersectionObserver) {
+      return;
+    }
+    state.intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        if (!state.enabled) {
+          return;
+        }
+        const hit = entries.some(
+          (entry) =>
+            entry.isIntersecting &&
+            entry.target instanceof HTMLImageElement &&
+            isStructuralCandidate(entry.target)
+        );
+        if (hit) {
+          scheduleDebouncedScan(700);
+        }
+      },
+      {
+        root: null,
+        rootMargin: "200px 0px", // hero + lazy images before they decode
+        threshold: 0.01,
+      }
+    );
+  }
+
+  function attachImageLoadCapture() {
+    if (state.imageLoadCaptureBound) {
+      return;
+    }
+    document.addEventListener("load", onImageLoadCapture, true);
+    state.imageLoadCaptureBound = true;
+  }
+
+  function onImageLoadCapture(event) {
+    if (!state.enabled) {
+      return;
+    }
+    const target = event.target;
+    if (!(target instanceof HTMLImageElement)) {
+      return;
+    }
+    if (!isStructuralCandidate(target)) {
+      return;
+    }
+    const now = Date.now();
+    if (now < state.loadThrottleNextOk) {
+      return;
+    }
+    state.loadThrottleNextOk = now + LOAD_RESCHEDULE_GAP_MS;
+    scheduleDebouncedScan(750);
+  }
+
+  function wireStructuralImagesForIntersection() {
+    if (!state.enabled || !state.intersectionObserver) {
+      return;
+    }
+    const images = document.querySelectorAll("img");
+    for (const image of images) {
+      if (!(image instanceof HTMLImageElement)) {
+        continue;
+      }
+      if (!isStructuralCandidate(image)) {
+        continue;
+      }
+      if (image.getAttribute("data-accessable-io-bound") === "1") {
+        continue;
+      }
+      image.setAttribute("data-accessable-io-bound", "1");
+      state.intersectionObserver.observe(image);
+    }
+  }
+
+  async function runPool(items, concurrency, fn) {
+    const results = new Array(items.length);
+    let nextIndex = 0;
+    async function worker() {
+      while (true) {
+        const i = nextIndex;
+        nextIndex += 1;
+        if (i >= items.length) {
+          return;
+        }
+        results[i] = await fn(items[i], i);
+      }
+    }
+    const n = Math.min(Math.max(1, concurrency), Math.max(1, items.length));
+    await Promise.all(Array.from({ length: n }, () => worker()));
+    return results;
+  }
+
+  async function scanNow(options) {
+    const force = options && options.force === true;
     if (!state.enabled || state.isScanning) {
       return { scanned: 0, updated: 0 };
     }
+    if (
+      !force &&
+      state.lastScanFinishedAt > 0 &&
+      Date.now() - state.lastScanFinishedAt < MIN_GAP_BETWEEN_SCANS_MS
+    ) {
+      return { scanned: 0, updated: 0 };
+    }
+
+    wireStructuralImagesForIntersection();
 
     state.isScanning = true;
     let imagesToAnalyze = [];
@@ -135,15 +273,17 @@
         return { scanned: 0, updated: 0 };
       }
 
-      let updated = 0;
-      await Promise.all(
-        imagesToAnalyze.map(async (candidate) => {
-          const didUpdate = await analyzeAndInject(candidate);
-          if (didUpdate) {
-            updated += 1;
-          }
-        })
+      const outcomes = await runPool(
+        imagesToAnalyze,
+        MAX_CONCURRENT_IMAGE_ANALYSIS,
+        (candidate) => analyzeAndInject(candidate)
       );
+      let updated = 0;
+      for (let i = 0; i < outcomes.length; i += 1) {
+        if (outcomes[i]) {
+          updated += 1;
+        }
+      }
 
       if (updated > 0) {
         void globalThis.AccessAbleLogs?.log(
@@ -157,6 +297,7 @@
       return { scanned: imagesToAnalyze.length, updated: 0 };
     } finally {
       state.isScanning = false;
+      state.lastScanFinishedAt = Date.now();
     }
   }
 
@@ -191,6 +332,13 @@
         target.setAttribute("data-accessable-ai-alt", "true");
         target.removeAttribute("data-accessable-analysis-error");
         removeMissingStyle(target);
+        if (
+          state.intersectionObserver &&
+          target.getAttribute("data-accessable-io-bound") === "1"
+        ) {
+          state.intersectionObserver.unobserve(target);
+          target.removeAttribute("data-accessable-io-bound");
+        }
         state.scannedIds.add(candidate.elementId);
 
         void incrementImagesFixedCounter(candidate);
@@ -246,37 +394,57 @@
     return candidates;
   }
 
-  function isEligibleImage(image) {
+  function isStructuralCandidate(image) {
+    if (!(image instanceof HTMLImageElement)) {
+      return false;
+    }
     const role = image.getAttribute("role");
     if (role === "presentation" || role === "none") {
       return false;
     }
-
     if (image.getAttribute("aria-hidden") === "true") {
       return false;
     }
-
     const alt = image.getAttribute("alt");
     if (alt && alt.trim().length > 0) {
       return false;
     }
-
-    if (!isVisible(image)) {
+    const sourceUrl = getImageSource(image);
+    if (!sourceUrl) {
       return false;
     }
-
     return true;
   }
 
-  function isVisible(element) {
-    const style = window.getComputedStyle(element);
-    return (
-      style.display !== "none" &&
-      style.visibility !== "hidden" &&
-      Number(style.opacity || "1") > 0 &&
-      element.clientWidth > 0 &&
-      element.clientHeight > 0
-    );
+  function isEligibleImage(image) {
+    if (!isStructuralCandidate(image)) {
+      return false;
+    }
+    return isRenderableForAltAnalysis(image);
+  }
+
+  /**
+   * Large / lazy images often report 0×0 layout until decode or viewport entry.
+   * IntersectionObserver + load capture schedule rescans; this gate avoids truly hidden imgs.
+   */
+  function isRenderableForAltAnalysis(image) {
+    const style = window.getComputedStyle(image);
+    if (
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      Number(style.opacity || "1") <= 0
+    ) {
+      return false;
+    }
+    const cw = image.clientWidth;
+    const ch = image.clientHeight;
+    if (cw > 0 && ch > 0) {
+      return true;
+    }
+    if (image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
+      return true;
+    }
+    return false;
   }
 
   function getImageSource(image) {
@@ -290,7 +458,16 @@
     }
 
     try {
-      return new URL(raw, window.location.href).toString();
+      let resolved = raw.trim();
+      // Wikipedia and many CDNs use protocol-relative // URLs; resolve like the browser would.
+      if (resolved.startsWith("//")) {
+        const proto =
+          window.location.protocol === "http:" || window.location.protocol === "https:"
+            ? window.location.protocol
+            : "https:";
+        resolved = `${proto}${resolved}`;
+      }
+      return new URL(resolved, window.location.href).toString();
     } catch (_) {
       return "";
     }
@@ -342,6 +519,13 @@
       : "Image analysis failed";
     target.setAttribute("data-accessable-analysis-error", errorText);
     removeMissingStyle(target);
+    if (
+      state.intersectionObserver &&
+      target.getAttribute("data-accessable-io-bound") === "1"
+    ) {
+      state.intersectionObserver.unobserve(target);
+      target.removeAttribute("data-accessable-io-bound");
+    }
     state.scannedIds.add(elementId);
   }
 
