@@ -12,9 +12,6 @@
 
     CAPTIONS_EXTRACT: "captions.extract",
     CAPTIONS_FETCH_TRACK_CONTENT: "captions.fetchTrackContent",
-    CAPTIONS_ASSIST_SIMPLIFY: "captions.assistSimplify",
-    CAPTIONS_ASSIST_TRANSLATE: "captions.assistTranslate",
-    CAPTIONS_ASSIST_SUMMARIZE: "captions.assistSummarize",
 
     KEYBOARD_TRACK_FIXES: "keyboard.trackFixes",
     KEYBOARD_GET_ANALYTICS: "keyboard.getAnalytics",
@@ -46,9 +43,6 @@
     ROOT: "/",
     IMAGE_ANALYZE: "/api/v1/image/analyze",
     CAPTIONS_EXTRACT: "/api/v1/captions/extract",
-    CAPTIONS_ASSIST_SIMPLIFY: "/api/v1/captions/assist/simplify",
-    CAPTIONS_ASSIST_TRANSLATE: "/api/v1/captions/assist/translate",
-    CAPTIONS_ASSIST_SUMMARIZE: "/api/v1/captions/assist/summarize",
     KEYBOARD_TRACK_FIXES: "/api/v1/keyboard/track-fixes",
     KEYBOARD_ANALYTICS: "/api/v1/keyboard/analytics",
   });
@@ -69,7 +63,7 @@
 
   const DEFAULT_CAPTIONS_SETTINGS = Object.freeze({
     enabled: true,
-    preferredLanguages: ["en"],
+    preferredLanguages: ["en", "ur"],
     overlay: Object.freeze({
       position: "bottom",
       fontSizePx: 20,
@@ -85,13 +79,6 @@
     network: Object.freeze({
       timeoutMs: 4000,
       retries: 2,
-    }),
-    assist: Object.freeze({
-      enabled: false,
-      mode: "simplify",
-      targetLanguage: "",
-      timeoutMs: 2500,
-      retries: 0,
     }),
     telemetryEnabled: false,
     debug: false,
@@ -132,8 +119,21 @@
       return "";
     }
 
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return "";
+    }
+
     try {
-      const parsed = new URL(raw);
+      // Protocol-relative URLs ("//host/...") are invalid for `new URL` without a base (e.g. service worker).
+      let toParse = trimmed;
+      if (toParse.startsWith("//")) {
+        toParse = `https:${toParse}`;
+      }
+      const parsed = new URL(toParse);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return "";
+      }
       parsed.hash = "";
       return parsed.toString();
     } catch (_) {

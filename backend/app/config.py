@@ -4,6 +4,7 @@ Configuration - All constants and environment variables
 """
 
 import os
+import warnings
 from dotenv import load_dotenv
 
 # ============================================================================
@@ -80,10 +81,10 @@ ALLOWED_ORIGINS = [
 # VALIDATION
 # ============================================================================
 if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY missing in .env file")
+    warnings.warn("GEMINI_API_KEY missing in .env — Module 1 (image alt-text) will be unavailable")
 
 if not os.path.exists(PROMPT_PATH):
-    raise FileNotFoundError(f"Prompt file missing: {PROMPT_PATH}")
+    warnings.warn(f"Prompt file missing: {PROMPT_PATH} — Module 1 (image alt-text) will be unavailable")
 
 
 # ============================================================================

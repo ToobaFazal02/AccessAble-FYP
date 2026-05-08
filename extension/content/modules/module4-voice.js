@@ -4,12 +4,20 @@
   const TOAST_ID = "accessable-voice-toast";
   const TOAST_DURATION_MS = 3000;
   const MAX_NO_SPEECH_RESTARTS = 5;
+  const RESTART_BASE_DELAY_MS = 450;
+  const RESTART_MAX_DELAY_MS = 3500;
+  const COMMAND_COOLDOWN_MS = 350;
+  const CLICK_CANDIDATE_LIMIT = 450;
 
   const state = {
     enabled: false,
     recognition: null,
     commandsExecuted: 0,
     noSpeechCount: 0,
+    isRestartScheduled: false,
+    restartAttempts: 0,
+    activeStartToken: 0,
+    lastCommandAt: 0,
   };
 
   function enable() {
@@ -37,6 +45,8 @@
           .trim()
           .toLowerCase();
         if (transcript) {
+          state.noSpeechCount = 0;
+          state.restartAttempts = 0;
           handleCommand(transcript);
         }
       };
@@ -64,7 +74,7 @@
 
         if (errorType === "network") {
           showToast("Voice: network error. Reconnecting\u2026", false);
-          safeRestartRecognition();
+          scheduleRecognitionRestart();
           return;
         }
 
@@ -77,7 +87,7 @@
 
       recognition.onend = () => {
         if (state.enabled) {
-          safeRestartRecognition();
+          scheduleRecognitionRestart();
         }
       };
 
@@ -85,7 +95,8 @@
       state.enabled = true;
       state.noSpeechCount = 0;
 
-      recognition.start();
+      state.activeStartToken += 1;
+      safeStartRecognition(recognition, state.activeStartToken);
       showToast("Voice commands active. Say a command.");
     } catch (err) {
       showToast(
@@ -102,6 +113,9 @@
   function disable() {
     state.enabled = false;
     state.noSpeechCount = 0;
+    state.restartAttempts = 0;
+    state.isRestartScheduled = false;
+    state.activeStartToken += 1;
 
     if (state.recognition) {
       try {
@@ -126,18 +140,44 @@
     };
   }
 
-  function safeRestartRecognition() {
-    if (!state.recognition || !state.enabled) {
+  function safeStartRecognition(recognition, token) {
+    if (!recognition || !state.enabled || token !== state.activeStartToken) {
       return;
     }
     try {
-      state.recognition.start();
+      recognition.start();
     } catch (_) {
       // Already started or unavailable — ignore.
     }
   }
 
+  function scheduleRecognitionRestart() {
+    if (!state.recognition || !state.enabled || state.isRestartScheduled) {
+      return;
+    }
+    state.isRestartScheduled = true;
+    state.restartAttempts += 1;
+    const delay = Math.min(
+      RESTART_MAX_DELAY_MS,
+      RESTART_BASE_DELAY_MS * Math.max(1, state.restartAttempts)
+    );
+    const token = state.activeStartToken;
+    setTimeout(() => {
+      state.isRestartScheduled = false;
+      if (!state.enabled || !state.recognition || token !== state.activeStartToken) {
+        return;
+      }
+      safeStartRecognition(state.recognition, token);
+    }, delay);
+  }
+
   function handleCommand(transcript) {
+    const now = Date.now();
+    if (now - state.lastCommandAt < COMMAND_COOLDOWN_MS) {
+      return;
+    }
+    state.lastCommandAt = now;
+
     if (transcript.includes("scroll down")) {
       window.scrollBy({ top: 300, behavior: "smooth" });
       showToast("Scrolling down");
@@ -195,7 +235,10 @@
   function tryClick(targetText) {
     const selectors =
       'button, a, [role="button"], [role="link"], input[type="submit"], input[type="button"]';
-    const candidates = Array.from(document.querySelectorAll(selectors));
+    const candidates = Array.from(document.querySelectorAll(selectors)).slice(
+      0,
+      CLICK_CANDIDATE_LIMIT
+    );
     const lower = targetText.toLowerCase();
 
     const match =

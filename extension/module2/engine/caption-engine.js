@@ -12,7 +12,6 @@
   function createCaptionEngine(options = {}) {
     const adapters = Array.isArray(options.adapters) ? options.adapters.filter(Boolean) : [];
     const cueCache = options.cueCache || null;
-    const assistService = options.assistService || null;
     const onCue = typeof options.onCue === "function" ? options.onCue : () => {};
     const onStatus = typeof options.onStatus === "function" ? options.onStatus : () => {};
 
@@ -29,14 +28,6 @@
       settings: {},
       lastError: "",
       lastStage: "",
-      assistRequestId: 0,
-      assist: {
-        enabled: false,
-        mode: "",
-        applied: false,
-        provider: "",
-        lastError: "",
-      },
     };
 
     return {
@@ -86,13 +77,6 @@
       state.contextKey = "";
       state.activeCueIndex = -1;
       state.lastError = "";
-      state.assist = {
-        enabled: false,
-        mode: "",
-        applied: false,
-        provider: "",
-        lastError: "",
-      };
 
       if (!context?.videoElement) {
         safeStatus({
@@ -138,6 +122,9 @@
         const tracks = await adapter.discoverTracks(context, {
           signal: state.abortController.signal,
           debug: Boolean(state.settings?.debug),
+          preferredLanguages: Array.isArray(state.settings?.preferredLanguages)
+            ? state.settings.preferredLanguages
+            : [],
         });
         if (!state.enabled || state.abortController.signal.aborted) {
           return;
@@ -217,7 +204,6 @@
         });
 
         onTimeUpdate(Number(context.videoElement.currentTime) || 0);
-        void maybeAssistCues(cues, selectedTrack, context);
       } catch (error) {
         if (error?.name === "AbortError") {
           return;
@@ -270,11 +256,6 @@
         cueCount: Array.isArray(state.cues) ? state.cues.length : 0,
         available: Boolean(state.track && Array.isArray(state.cues) && state.cues.length > 0),
         lastError: state.lastError,
-        assistEnabled: state.assist.enabled === true,
-        assistMode: state.assist.mode || "",
-        assistApplied: state.assist.applied === true,
-        assistProvider: state.assist.provider || "",
-        assistLastError: state.assist.lastError || "",
       };
     }
 
@@ -292,7 +273,6 @@
         state.abortController.abort();
       }
       state.abortController = null;
-      state.assistRequestId += 1;
 
       if (state.adapter && typeof state.adapter.destroy === "function") {
         try {
@@ -336,82 +316,6 @@
       }
     }
 
-    async function maybeAssistCues(baseCues, track, context) {
-      if (!assistService || typeof assistService.request !== "function") {
-        return;
-      }
-
-      const assistSettings = state.settings?.assist;
-      if (!assistSettings || assistSettings.enabled !== true) {
-        return;
-      }
-
-      const mode = String(assistSettings.mode || "").toLowerCase();
-      if (!["simplify", "translate", "summarize"].includes(mode)) {
-        return;
-      }
-      state.assist.enabled = true;
-      state.assist.mode = mode;
-      state.assist.applied = false;
-      state.assist.lastError = "";
-
-      if (!Array.isArray(baseCues) || baseCues.length === 0) {
-        return;
-      }
-
-      const requestId = (state.assistRequestId += 1);
-
-      try {
-        const assisted = await assistService.request({
-          mode,
-          cues: baseCues,
-          track,
-          context,
-          settings: assistSettings,
-          signal: state.abortController?.signal,
-          debug: Boolean(state.settings?.debug),
-          telemetryEnabled: state.settings?.telemetryEnabled === true,
-        });
-
-        if (
-          !state.enabled ||
-          state.abortController?.signal.aborted ||
-          requestId !== state.assistRequestId
-        ) {
-          return;
-        }
-
-        if (Array.isArray(assisted) && assisted.length > 0) {
-          state.cues = assisted;
-          state.activeCueIndex = -1;
-          state.assist.applied = true;
-          state.assist.provider = "llm_assist";
-          debugLog(Boolean(state.settings?.debug), "assist_applied", {
-            mode,
-            cueCount: assisted.length,
-          });
-          onTimeUpdate(Number(context?.videoElement?.currentTime) || 0);
-        }
-      } catch (error) {
-        if (error?.name === "AbortError") {
-          return;
-        }
-        if (error?.code === "assist_quota_exceeded") {
-          safeStatus({
-            stage: "assist_unavailable",
-            available: true,
-            adapter: state.adapter?.name || "",
-            reason: "AI assist quota reached. Showing original captions.",
-          });
-        }
-        state.assist.applied = false;
-        state.assist.lastError = error?.message || "Assist request failed";
-        debugLog(Boolean(state.settings?.debug), "assist_failed", {
-          mode,
-          error: error?.message || "Assist request failed",
-        });
-      }
-    }
   }
 
   const api = Object.freeze({

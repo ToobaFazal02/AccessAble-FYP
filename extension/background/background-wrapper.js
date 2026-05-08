@@ -11,7 +11,6 @@ const {
   DEFAULT_STATE,
   CACHE_POLICY,
   REQUEST_POLICY,
-  DEFAULT_CAPTIONS_SETTINGS,
   toAbsoluteUrl,
   normalizeUrl,
   getDomain,
@@ -338,11 +337,6 @@ async function routeMessage(request, sender) {
     case ACTIONS.CAPTIONS_FETCH_TRACK_CONTENT:
       return fetchCaptionTrackContent(request?.payload || {});
 
-    case ACTIONS.CAPTIONS_ASSIST_SIMPLIFY:
-    case ACTIONS.CAPTIONS_ASSIST_TRANSLATE:
-    case ACTIONS.CAPTIONS_ASSIST_SUMMARIZE:
-      return assistCaptions(request?.payload || {}, request?.action);
-
     case ACTIONS.KEYBOARD_TRACK_FIXES:
       return trackKeyboardFixes(request?.payload || {}, sender);
 
@@ -488,15 +482,20 @@ async function getOrAnalyzeImage(imageUrl, pageUrl) {
 
   if (!response.ok) {
     if (response.status === 400) {
+      const detail = response.payload?.detail;
+      const message400 =
+        typeof detail === "string" && detail.trim().length > 0
+          ? detail.trim()
+          : "Unsupported or unreadable image URL";
       await writeCache(`${cacheKey}:negative`, {
-        error: "Unsupported or unreadable image URL",
+        error: message400,
       });
       return {
         description: "",
         confidence: null,
         source: "negative_cache",
         fromCache: false,
-        error: "Unsupported or unreadable image URL",
+        error: message400,
       };
     }
 
@@ -633,65 +632,6 @@ async function fetchCaptionTrackContent(payload) {
       body: response.body,
     },
   };
-}
-
-async function assistCaptions(payload, action) {
-  const endpointMap = {
-    [ACTIONS.CAPTIONS_ASSIST_SIMPLIFY]: ENDPOINTS.CAPTIONS_ASSIST_SIMPLIFY,
-    [ACTIONS.CAPTIONS_ASSIST_TRANSLATE]: ENDPOINTS.CAPTIONS_ASSIST_TRANSLATE,
-    [ACTIONS.CAPTIONS_ASSIST_SUMMARIZE]: ENDPOINTS.CAPTIONS_ASSIST_SUMMARIZE,
-  };
-  const endpoint = endpointMap[action];
-  if (!endpoint) {
-    return { ok: false, error: { message: "Unknown assist action" } };
-  }
-
-  const cues = Array.isArray(payload?.cues) ? payload.cues : [];
-  if (cues.length === 0) {
-    return { ok: false, error: { message: "Invalid assist payload" } };
-  }
-
-  const timeoutMs = clampInteger(
-    payload?.timeoutMs,
-    500,
-    15000,
-    DEFAULT_CAPTIONS_SETTINGS?.assist?.timeoutMs || 2500
-  );
-  const retries = clampInteger(
-    payload?.retries,
-    0,
-    3,
-    DEFAULT_CAPTIONS_SETTINGS?.assist?.retries || 1
-  );
-
-  const response = await requestWithRetryBounded({
-    endpoint,
-    method: "POST",
-    body: {
-      mode: String(payload?.mode || "").trim(),
-      cues,
-      source_lang: String(payload?.source_lang || ""),
-      target_lang: String(payload?.target_lang || ""),
-      page_url: normalizeUrl(payload?.page_url || ""),
-      video_url: normalizeUrl(payload?.video_url || ""),
-      telemetry_enabled: payload?.telemetry_enabled === true,
-    },
-    parseJson: true,
-    timeoutMs,
-    retries,
-    baseUrl: CAPTIONS_BASE_URL,
-  });
-
-  if (!response.ok) {
-    const detail = response.payload?.detail;
-    const message =
-      typeof detail === "string"
-        ? detail
-        : detail?.error || `Caption assist failed (${response.status})`;
-    return { ok: false, error: { message, statusCode: response.status } };
-  }
-
-  return { ok: true, data: response.payload || {} };
 }
 
 async function trackKeyboardFixes(payload, sender) {
@@ -832,49 +772,6 @@ async function requestWithRetry({ endpoint, method, body, parseJson, baseUrl }) 
     const backoff = REQUEST_POLICY.RETRY_BASE_DELAY_MS * Math.pow(2, attempt);
     const jitter = Math.floor(Math.random() * REQUEST_POLICY.RETRY_JITTER_MS);
     await sleep(backoff + jitter);
-    attempt += 1;
-  }
-
-  return {
-    ok: false,
-    status: 599,
-    payload: null,
-  };
-}
-
-async function requestWithRetryBounded({
-  endpoint,
-  method,
-  body,
-  parseJson,
-  timeoutMs,
-  retries,
-  baseUrl,
-}) {
-  let attempt = 0;
-  const maxRetries = clampInteger(retries, 0, 5, 0);
-
-  while (attempt <= maxRetries) {
-    const response = await performFetch({
-      endpoint,
-      method,
-      body,
-      parseJson,
-      timeoutMs,
-      baseUrl,
-    });
-
-    if (response.ok || attempt === maxRetries) {
-      return response;
-    }
-
-    if (!shouldRetry(response.status)) {
-      return response;
-    }
-
-    const retryAfterMs = Math.max(0, Number(response.retryAfterMs || 0));
-    const fallbackDelayMs = 300 * (attempt + 1);
-    await sleep(retryAfterMs > 0 ? retryAfterMs : fallbackDelayMs);
     attempt += 1;
   }
 
@@ -1053,10 +950,3 @@ async function fetchExternalText(url, timeoutMs) {
   }
 }
 
-function clampInteger(value, min, max, fallback) {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, Math.round(numeric)));
-}

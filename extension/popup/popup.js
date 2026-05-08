@@ -33,12 +33,7 @@ const DEFAULT_SETTINGS = contracts.DEFAULT_SETTINGS || {
 };
 const DEFAULT_CAPTIONS_SETTINGS = contracts.DEFAULT_CAPTIONS_SETTINGS || {
   enabled: true,
-  preferredLanguages: ["en"],
-  assist: {
-    enabled: false,
-    mode: "simplify",
-    targetLanguage: "",
-  },
+  preferredLanguages: ["en", "ur"],
 };
 const IMAGE_ALT_INJECTED_ACTION = "image.altInjected";
 const IMAGES_FIXED_STORAGE_KEY = "accessable_images_fixed_count";
@@ -71,6 +66,7 @@ async function initializePopup() {
   await loadStoredState();
   renderAll();
   await syncKeyboardFixesFromActiveTab();
+  await syncVoiceStatusFromActiveTab();
   await checkBackend();
 }
 
@@ -97,9 +93,6 @@ function cacheElements() {
   refs.scanCaptionsNow = document.getElementById("scanCaptionsNow");
   refs.captionsScanStatus = document.getElementById("captionsScanStatus");
   refs.captionLangsInput = document.getElementById("captionLangsInput");
-  refs.assistEnabled = document.getElementById("assistEnabled");
-  refs.assistMode = document.getElementById("assistMode");
-  refs.targetLanguage = document.getElementById("targetLanguage");
   refs.applyCaptionPrefs = document.getElementById("applyCaptionPrefs");
   refs.captionStatusHint = document.getElementById("captionStatusHint");
 
@@ -626,6 +619,31 @@ async function syncKeyboardFixesFromActiveTab() {
   }
 }
 
+async function syncVoiceStatusFromActiveTab() {
+  try {
+    const tab = await getActiveTab();
+    if (!tab?.id || isRestrictedTab(tab.url)) {
+      popupState.voiceModuleEnabled = false;
+      renderVoiceState();
+      return;
+    }
+    const ready = await ensureContentScript(tab.id);
+    if (!ready) {
+      popupState.voiceModuleEnabled = false;
+      renderVoiceState();
+      return;
+    }
+    const response = await sendTabMessage(tab.id, {
+      action: ACTIONS.VOICE_GET_STATUS,
+    });
+    popupState.voiceModuleEnabled = Boolean(response?.ok && response.data?.enabled);
+    renderVoiceState();
+  } catch (_) {
+    popupState.voiceModuleEnabled = false;
+    renderVoiceState();
+  }
+}
+
 async function loadStoredState() {
   const [data, localData] = await Promise.all([
     chrome.storage.sync.get([
@@ -663,7 +681,8 @@ async function loadStoredState() {
   popupState.imageModuleEnabled = Boolean(storedState.imageModuleEnabled);
   popupState.keyboardModuleEnabled = Boolean(storedState.keyboardModuleEnabled);
   popupState.captionsModuleEnabled = Boolean(storedState.captionsModuleEnabled);
-  popupState.voiceModuleEnabled = Boolean(storedState.voiceModuleEnabled);
+  // Voice command listener is now tab/session scoped for performance safety.
+  popupState.voiceModuleEnabled = false;
   popupState.imagesFixed = normalizeCounter(localData[IMAGES_FIXED_STORAGE_KEY]);
 }
 
@@ -784,15 +803,6 @@ function renderCaptionSettings() {
   if (refs.captionLangsInput) {
     refs.captionLangsInput.value = settings.preferredLanguages.join(",");
   }
-  if (refs.assistEnabled) {
-    refs.assistEnabled.checked = settings.assist.enabled === true;
-  }
-  if (refs.assistMode) {
-    refs.assistMode.value = settings.assist.mode || "simplify";
-  }
-  if (refs.targetLanguage) {
-    refs.targetLanguage.value = settings.assist.targetLanguage || "";
-  }
 }
 
 function renderImagesFixedCounter() {
@@ -844,7 +854,6 @@ async function ensureContentScript(tabId) {
             "module2/adapters/adapter-contracts.js",
             "module2/adapters/adapter-utils.js",
             "module2/engine/cue-normalizer.js",
-            "module2/assist/assist-service.js",
             "module2/adapters/youtube-adapter.js",
             "module2/adapters/html5-track-adapter.js",
             "module2/engine/language-fallback.js",
@@ -860,13 +869,14 @@ async function ensureContentScript(tabId) {
             "content/modules/module1-image.js",
             "content/modules/module2-captions.js",
             "content/modules/module3-keyboard.js",
+            "content/modules/module4-voice.js",
             "content/content.js",
           ],
         });
 
         await chrome.scripting.insertCSS({
           target: { tabId },
-          files: ["content/content.css"],
+          files: ["content/content.css", "content/modules/module4-voice.css"],
         });
         return true;
       } catch (_) {
@@ -970,19 +980,10 @@ async function onApplyCaptionPreferences() {
 
 function buildCaptionsSettingsFromInputs() {
   const preferredLanguages = parseLanguagePriority(refs.captionLangsInput?.value || "");
-  const assistMode = String(refs.assistMode?.value || "simplify").toLowerCase();
-  const assistEnabled = refs.assistEnabled?.checked === true;
-  const targetLanguage = String(refs.targetLanguage?.value || "").trim().toLowerCase();
 
   return normalizeCaptionsSettings({
     ...popupState.captionsSettings,
     preferredLanguages,
-    assist: {
-      ...(popupState.captionsSettings?.assist || {}),
-      enabled: assistEnabled,
-      mode: ["simplify", "translate", "summarize"].includes(assistMode) ? assistMode : "simplify",
-      targetLanguage,
-    },
   });
 }
 
@@ -996,19 +997,10 @@ function normalizeCaptionsSettings(raw) {
   const source = raw && typeof raw === "object" ? raw : {};
   const defaults = cloneCaptionsDefaults();
   const preferredLanguages = parseLanguagePriority(source.preferredLanguages || defaults.preferredLanguages);
-  const assistSource = source.assist && typeof source.assist === "object" ? source.assist : {};
-  const mode = String(assistSource.mode || defaults.assist.mode || "simplify").toLowerCase();
   return {
     ...defaults,
     ...source,
     preferredLanguages,
-    assist: {
-      ...defaults.assist,
-      ...assistSource,
-      enabled: assistSource.enabled === true,
-      mode: ["simplify", "translate", "summarize"].includes(mode) ? mode : "simplify",
-      targetLanguage: String(assistSource.targetLanguage || "").trim().toLowerCase(),
-    },
   };
 }
 
@@ -1040,10 +1032,7 @@ function cloneCaptionsDefaults() {
     ...DEFAULT_CAPTIONS_SETTINGS,
     preferredLanguages: Array.isArray(DEFAULT_CAPTIONS_SETTINGS.preferredLanguages)
       ? [...DEFAULT_CAPTIONS_SETTINGS.preferredLanguages]
-      : ["en"],
-    assist: {
-      ...(DEFAULT_CAPTIONS_SETTINGS.assist || {}),
-    },
+      : ["en", "ur"],
   };
 }
 
@@ -1090,25 +1079,13 @@ async function syncCaptionsRuntimeStatus(tabId) {
 
   const info = response.data;
   if (!info.available) {
-    const assistTail = info.assistLastError
-      ? ` | AI assist: ${String(info.assistLastError).slice(0, 80)}`
-      : "";
-    setCaptionHint(
-      `Status: ${info.stage || "idle"}${info.reason ? ` - ${info.reason}` : ""}${assistTail}`
-    );
+    setCaptionHint(`Status: ${info.stage || "idle"}${info.reason ? ` - ${info.reason}` : ""}`);
     return info;
   }
 
   const autoLabel = info.isAuto ? "auto-generated" : "manual";
-  const assistPart = info.assistEnabled
-    ? info.assistApplied
-      ? ` | AI: ${info.assistMode || "assist"} applied`
-      : info.assistLastError
-        ? " | AI: fallback to original captions"
-        : ` | AI: ${info.assistMode || "assist"} pending`
-    : "";
   setCaptionHint(
-    `Active track: ${info.trackLang || "und"} (${autoLabel}), cues: ${Number(info.cueCount || 0)}${assistPart}`
+    `Active track: ${info.trackLang || "und"} (${autoLabel}), cues: ${Number(info.cueCount || 0)}`
   );
   return info;
 }

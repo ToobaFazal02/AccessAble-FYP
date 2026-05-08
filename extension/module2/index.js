@@ -9,7 +9,6 @@
   const cueCacheApi = globalThis.AccessAbleModule2CueCache || {};
   const lifecycleApi = globalThis.AccessAbleModule2LifecycleManager || {};
   const statusMapperApi = globalThis.AccessAbleModule2StatusMapper || {};
-  const assistServiceApi = globalThis.AccessAbleModule2AssistService || {};
 
   const createYouTubeAdapter = adaptersYouTube.createYouTubeAdapter || (() => null);
   const createHTML5TrackAdapter = adaptersHTML5.createHTML5TrackAdapter || (() => null);
@@ -21,7 +20,6 @@
   const createLifecycleManager = lifecycleApi.createLifecycleManager || (() => null);
   const getCaptionStatusPresentation =
     statusMapperApi.getCaptionStatusPresentation || (() => null);
-  const createAssistService = assistServiceApi.createAssistService || (() => null);
 
   const state = {
     enabled: false,
@@ -32,7 +30,6 @@
     lifecycle: null,
     settingsStore: null,
     cueCache: null,
-    assistService: null,
     unsubscribeSettings: null,
     taskChain: Promise.resolve(),
     engineStatus: {
@@ -102,11 +99,6 @@
       trackLang: runtime.trackLang || "",
       isAuto: Boolean(runtime.isAuto),
       cueCount: Number(runtime.cueCount || 0),
-      assistEnabled: Boolean(runtime.assistEnabled),
-      assistMode: runtime.assistMode || "",
-      assistApplied: Boolean(runtime.assistApplied),
-      assistProvider: runtime.assistProvider || "",
-      assistLastError: runtime.assistLastError || "",
       stage: state.engineStatus.stage,
       reason: state.engineStatus.reason || "",
     };
@@ -196,10 +188,6 @@
     }
 
     if (!state.engine) {
-      if (!state.assistService) {
-        state.assistService = createAssistService();
-      }
-
       const adapters = [createYouTubeAdapter(), createHTML5TrackAdapter()].filter(Boolean);
       const engine = createCaptionEngine({
         adapters,
@@ -207,7 +195,6 @@
           get: (key, language, isAuto) => state.cueCache.get(key, language, isAuto),
           set: (key, cues, language, isAuto) => state.cueCache.set(key, cues, language, isAuto),
         },
-        assistService: state.assistService,
         onCue: (cue) => {
           if (!state.renderer || !state.enabled) {
             return;

@@ -25,7 +25,6 @@
         "module2/adapters/adapter-contracts.js",
         "module2/adapters/adapter-utils.js",
         "module2/engine/cue-normalizer.js",
-        "module2/assist/assist-service.js",
         "module2/adapters/youtube-adapter.js",
         "module2/adapters/html5-track-adapter.js",
         "module2/engine/language-fallback.js",

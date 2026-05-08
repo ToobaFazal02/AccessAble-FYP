@@ -5,7 +5,13 @@ Cache Manager - Redis with in-memory fallback (Module 1 & 2 Compatible)
 import hashlib
 import json
 from typing import Optional
-from redis import Redis, RedisError
+try:
+    from redis import Redis, RedisError
+    HAS_REDIS = True
+except ImportError:
+    Redis = None
+    RedisError = Exception
+    HAS_REDIS = False
 
 from app.config import REDIS_URL, USE_REDIS, CACHE_TTL_SECONDS
 from app.logger import log_info, log_warning, log_error
@@ -21,7 +27,7 @@ class CacheManager:
         self.redis_client = None
         self.memory_cache = {}  # Fallback
         
-        if USE_REDIS:
+        if USE_REDIS and HAS_REDIS:
             try:
                 self.redis_client = Redis.from_url(
                     REDIS_URL,
@@ -33,6 +39,8 @@ class CacheManager:
             except RedisError as e:
                 log_warning(f"⚠️  Redis failed, using in-memory: {e}")
                 self.redis_client = None
+        elif USE_REDIS and not HAS_REDIS:
+            log_warning("redis package not installed, using in-memory cache")
     
     def hash_url(self, url: str) -> str:
         """Generate SHA256 hash from URL"""

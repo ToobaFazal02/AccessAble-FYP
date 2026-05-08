@@ -6,7 +6,6 @@
     no_tracks: 4000,
     no_cues: 4000,
     backend_unreachable: 7000,
-    assist_unavailable: 4500,
     parser_error: 7000,
     error: 7000,
   });
@@ -43,14 +42,6 @@
           code: stage,
           message: "Caption backend unavailable",
           isError: true,
-          show: true,
-          ttlMs,
-        };
-      case "assist_unavailable":
-        return {
-          code: stage,
-          message: reason || "AI assist unavailable. Showing original captions",
-          isError: false,
           show: true,
           ttlMs,
         };

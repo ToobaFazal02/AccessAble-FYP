@@ -49,6 +49,9 @@
     if (!seen.has("en")) {
       normalized.push("en");
     }
+    if (!seen.has("ur")) {
+      normalized.push("ur");
+    }
 
     if (!seen.has("und")) {
       normalized.push("und");

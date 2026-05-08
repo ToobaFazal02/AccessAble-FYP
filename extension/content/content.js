@@ -57,9 +57,9 @@
       globalThis.AccessAbleModuleCaptions?.enableHighlights();
     }
 
-    if (state.voiceModuleEnabled) {
-      globalThis.AccessAbleModuleVoice?.enable();
-    }
+    // Voice recognition is intentionally not auto-started on every page load.
+    // Running microphone listeners across many tabs/profiles can degrade browser performance.
+    // Users can still enable Voice from popup for the active tab when needed.
   }
 
   function registerKeyboardShortcuts() {
@@ -139,7 +139,7 @@
       }
 
       case ACTIONS.CONTENT_SCAN_IMAGES_NOW: {
-        const result = await globalThis.AccessAbleModuleImage?.scanNow();
+        const result = await globalThis.AccessAbleModuleImage?.scanNow({ force: true });
         return { ok: true, data: result || { scanned: 0, updated: 0 } };
       }
 

@@ -64,29 +64,34 @@
   }
 
   async function discoverTracks(context, options = {}) {
+    // Backend first — it returns tracks WITH embedded cues (bypasses CORS)
+    try {
+      const backendTracks = await discoverTracksFromBackend(
+        context,
+        options.signal,
+        options.debug
+      );
+      if (backendTracks.length > 0) {
+        debugLog(options.debug, "track_discovery", { player: 0, backend: backendTracks.length });
+        return backendTracks;
+      }
+    } catch (err) {
+      debugLog(options.debug, "backend_discovery_failed", { error: err?.message });
+    }
+
+    // Fallback: client-side player response (tracks without embedded cues)
     const playerResponse = getPlayerResponse();
-    const tracks = extractTracksFromPlayerResponse(playerResponse);
+    const tracks = extractTracksFromPlayerResponse(
+      playerResponse,
+      Array.isArray(options.preferredLanguages) ? options.preferredLanguages : []
+    );
 
     debugLog(options.debug, "player_response", {
       available: Boolean(playerResponse),
       trackCount: tracks.length,
     });
-
-    if (tracks.length > 0) {
-      debugLog(options.debug, "track_discovery", { player: tracks.length, backend: 0 });
-      return tracks;
-    }
-
-    const backendTracks = await discoverTracksFromBackend(
-      context,
-      options.signal,
-      options.debug
-    );
-    debugLog(options.debug, "track_discovery", {
-      player: 0,
-      backend: backendTracks.length,
-    });
-    return backendTracks;
+    debugLog(options.debug, "track_discovery", { player: tracks.length, backend: 0 });
+    return tracks;
   }
 
   async function fetchCues(track, _context, options = {}) {
@@ -331,13 +336,19 @@
 
   function destroy() {}
 
-  function extractTracksFromPlayerResponse(playerResponse) {
+  function extractTracksFromPlayerResponse(playerResponse, preferredLanguages) {
     const captionTracks =
       playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    const translationLanguages =
+      playerResponse?.captions?.playerCaptionsTracklistRenderer?.translationLanguages;
     if (!Array.isArray(captionTracks)) {
       return [];
     }
 
+    const translationTargets = buildTranslationTargets(
+      preferredLanguages,
+      translationLanguages
+    );
     const result = [];
     const seen = new Set();
 
@@ -371,9 +382,78 @@
         src,
         source: "youtube",
       });
+
+      const isTranslatable = rawTrack.isTranslatable === true;
+      if (!isTranslatable || translationTargets.length === 0) {
+        continue;
+      }
+
+      for (const targetLang of translationTargets) {
+        if (!targetLang || targetLang === lang || targetLang === lang.split("-")[0]) {
+          continue;
+        }
+        const translatedSrc = createTranslatedTrackUrl(src, targetLang);
+        if (!translatedSrc) {
+          continue;
+        }
+        const translatedId = `${id}|tlang=${targetLang}`;
+        const translatedKey = `${translatedId}|${targetLang}|${translatedSrc}`;
+        if (seen.has(translatedKey)) {
+          continue;
+        }
+        seen.add(translatedKey);
+        result.push({
+          id: translatedId,
+          lang: targetLang,
+          label: `${extractLabel(rawTrack.name, lang)} -> ${targetLang.toUpperCase()}`,
+          isAuto,
+          kind: isAuto ? "auto_translated" : "manual_translated",
+          src: translatedSrc,
+          source: "youtube_translated",
+        });
+      }
     }
 
     return result;
+  }
+
+  function buildTranslationTargets(preferredLanguages, translationLanguages) {
+    const preferred = Array.isArray(preferredLanguages) ? preferredLanguages : [];
+    const available = Array.isArray(translationLanguages) ? translationLanguages : [];
+    const availableSet = new Set();
+    for (const item of available) {
+      const code = normalizeLanguageCode(item?.languageCode || "");
+      if (code && code !== "und") {
+        availableSet.add(code);
+      }
+    }
+
+    const ordered = [];
+    const seed = [...preferred, "en", "ur"];
+    for (const entry of seed) {
+      const code = normalizeLanguageCode(entry || "");
+      if (!code || code === "und") {
+        continue;
+      }
+      if (ordered.includes(code)) {
+        continue;
+      }
+      if (availableSet.size > 0 && !availableSet.has(code)) {
+        continue;
+      }
+      ordered.push(code);
+    }
+    return ordered.slice(0, 4);
+  }
+
+  function createTranslatedTrackUrl(url, targetLang) {
+    try {
+      const parsed = new URL(String(url || ""));
+      parsed.searchParams.set("tlang", targetLang);
+      return parsed.toString();
+    } catch (_) {
+      return "";
+    }
   }
 
   async function discoverTracksFromBackend(context, signal, debug) {
@@ -414,12 +494,13 @@
       for (let i = 0; i < tracks.length; i += 1) {
         const track = tracks[i];
         const src = String(track?.url || "").trim();
-        if (!isSafeCaptionUrl(src)) {
+        const embeddedCues = Array.isArray(track?.cues) ? track.cues : [];
+        const hasEmbeddedCues = embeddedCues.length > 0;
+        if (!hasEmbeddedCues && !isSafeCaptionUrl(src)) {
           continue;
         }
 
         const lang = normalizeLanguageCode(track?.language);
-        const embeddedCues = Array.isArray(track?.cues) ? track.cues : [];
         result.push({
           id: `backend_${lang}_${i}`,
           lang,

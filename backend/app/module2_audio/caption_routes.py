@@ -43,7 +43,7 @@ def generate_cache_key(request: CaptionExtractionRequest) -> str:
     """
     video_url = str(request.video_url)
     url_hash = hashlib.sha256(video_url.encode()).hexdigest()
-    return f"caption:v4:{url_hash}"
+    return f"caption:v5:{url_hash}"
 
 
 # Type alias for cleaner annotations

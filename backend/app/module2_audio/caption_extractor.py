@@ -9,6 +9,10 @@ BREAKING CHANGE FIX:
 import subprocess
 import json
 import hashlib
+import os
+import re
+import shutil
+import tempfile
 from typing import Dict, List, Optional
 from urllib.parse import urlparse, parse_qs
 from starlette.concurrency import run_in_threadpool
@@ -21,12 +25,18 @@ from youtube_transcript_api._errors import (
     VideoUnavailable
 )
 
-# Redis for caching
-import redis.asyncio as aioredis
-from redis.exceptions import RedisError
+# Redis for caching (optional — falls back to no-cache if not installed)
+try:
+    import redis.asyncio as aioredis
+    from redis.exceptions import RedisError
+    HAS_REDIS = True
+except ImportError:
+    aioredis = None
+    RedisError = Exception
+    HAS_REDIS = False
 
 from app.logger import log_info, log_error, log_success, log_warning
-from app.config import REDIS_URL
+from app.config import REDIS_URL, YTDLP_TIMEOUT_SEC
 
 
 class CaptionExtractor:
@@ -56,6 +66,10 @@ class CaptionExtractor:
     ALLOWED_FORMATS = {'vtt'}
     MAX_TRACKS = 10
     CACHE_TTL = 2592000  # 30 days
+    LOCAL_ASR_TIMEOUT_SEC = 900
+    # Audio download can be slow on poor networks; keep separate from metadata-only timeouts.
+    LOCAL_ASR_AUDIO_DOWNLOAD_TIMEOUT_SEC = 600
+    LOCAL_ASR_MODEL = "small"
     
     # Language priority
     PRIORITY_LANGUAGES = {
@@ -64,11 +78,13 @@ class CaptionExtractor:
     }
     
     # Redis client (singleton)
-    _redis_client: Optional[aioredis.Redis] = None
+    _redis_client = None
     
     @classmethod
-    async def _get_redis_client(cls) -> Optional[aioredis.Redis]:
+    async def _get_redis_client(cls):
         """Get or create Redis client (singleton pattern)"""
+        if not HAS_REDIS:
+            return None
         if cls._redis_client is None:
             try:
                 cls._redis_client = await aioredis.from_url(
@@ -89,7 +105,8 @@ class CaptionExtractor:
     def _generate_cache_key(video_url: str) -> str:
         """Generate cache key from video URL"""
         url_hash = hashlib.sha256(video_url.encode()).hexdigest()
-        return f"caption:v4:{url_hash}"  # v4 = includes embedded cues
+        # v5: bump when extraction/caching semantics change (invalidates stale empty-cache entries)
+        return f"caption:v5:{url_hash}"
     
     @classmethod
     async def _get_from_cache(cls, cache_key: str) -> Optional[Dict]:
@@ -253,7 +270,14 @@ class CaptionExtractor:
             }
             
         except TranscriptsDisabled:
-            raise RuntimeError("Captions are disabled for this video")
+            return {
+                'video_title': f"YouTube Video {video_id}",
+                'video_duration': None,
+                'platform': 'YouTube',
+                'has_captions': False,
+                'caption_tracks': [],
+                'original_language': None
+            }
         except NoTranscriptFound:
             return {
                 'video_title': f"YouTube Video {video_id}",
@@ -267,6 +291,113 @@ class CaptionExtractor:
             raise RuntimeError("Video is unavailable or private")
         except Exception as e:
             raise RuntimeError(f"YouTube transcript extraction failed: {str(e)}")
+
+    @staticmethod
+    def _extract_local_asr_sync(video_url: str) -> Dict:
+        """
+        Fallback path for videos without native captions:
+        1) Download audio with yt-dlp
+        2) Generate English VTT with local Whisper CLI (open-source, no API cost)
+        """
+        log_info(f"Attempting local ASR fallback for: {video_url}")
+
+        ytdlp_bin = shutil.which("yt-dlp")
+        whisper_bin = shutil.which("whisper")
+        if not ytdlp_bin:
+            raise RuntimeError(
+                "Local ASR fallback unavailable: yt-dlp is not installed (pip install yt-dlp)"
+            )
+        if not whisper_bin:
+            raise RuntimeError(
+                "Local ASR fallback unavailable: Whisper CLI is not installed "
+                "(pip install openai-whisper)"
+            )
+
+        with tempfile.TemporaryDirectory(prefix="accessable_asr_") as tmp_dir:
+            output_tpl = os.path.join(tmp_dir, "audio.%(ext)s")
+            download_cmd = [
+                ytdlp_bin,
+                "--no-playlist",
+                "--quiet",
+                "--no-warnings",
+                "--retries",
+                "5",
+                "--fragment-retries",
+                "5",
+                "--socket-timeout",
+                "30",
+                "-f",
+                "bestaudio/best",
+                "-o",
+                output_tpl,
+                video_url,
+            ]
+            result = subprocess.run(
+                download_cmd,
+                capture_output=True,
+                text=True,
+                timeout=max(
+                    int(YTDLP_TIMEOUT_SEC or 30),
+                    CaptionExtractor.LOCAL_ASR_AUDIO_DOWNLOAD_TIMEOUT_SEC,
+                ),
+            )
+            if result.returncode != 0:
+                stderr = (result.stderr or "").strip() or "yt-dlp download failed"
+                raise RuntimeError(f"Local ASR fallback failed while downloading audio: {stderr}")
+
+            audio_file = CaptionExtractor._find_downloaded_audio(tmp_dir)
+            if not audio_file:
+                raise RuntimeError("Local ASR fallback failed: downloaded audio file not found")
+
+            whisper_cmd = [
+                whisper_bin,
+                audio_file,
+                "--task",
+                "translate",
+                "--model",
+                CaptionExtractor.LOCAL_ASR_MODEL,
+                "--output_format",
+                "vtt",
+                "--output_dir",
+                tmp_dir,
+                "--fp16",
+                "False",
+            ]
+            whisper_result = subprocess.run(
+                whisper_cmd,
+                capture_output=True,
+                text=True,
+                timeout=CaptionExtractor.LOCAL_ASR_TIMEOUT_SEC,
+            )
+            if whisper_result.returncode != 0:
+                stderr = (whisper_result.stderr or "").strip() or "Whisper transcription failed"
+                raise RuntimeError(f"Local ASR fallback failed during transcription: {stderr}")
+
+            vtt_path = CaptionExtractor._find_generated_vtt(tmp_dir)
+            if not vtt_path:
+                raise RuntimeError("Local ASR fallback failed: Whisper VTT output not found")
+
+            cues = CaptionExtractor._parse_vtt_file(vtt_path)
+            if not cues:
+                raise RuntimeError("Local ASR fallback failed: no cues generated from audio")
+
+            return {
+                "video_title": "Generated captions",
+                "video_duration": None,
+                "platform": CaptionExtractor.detect_platform(video_url),
+                "has_captions": True,
+                "caption_tracks": [
+                    {
+                        "language": "en",
+                        "language_name": "English (generated)",
+                        "format": "vtt",
+                        "url": "",
+                        "auto_generated": True,
+                        "cues": cues,
+                    }
+                ],
+                "original_language": "en",
+            }
     
     @staticmethod
     def _ytdlp_fallback_extraction_sync(video_url: str) -> Dict:
@@ -356,16 +487,39 @@ class CaptionExtractor:
                 )
                 video_info['caption_tracks'] = optimized_tracks
                 video_info['has_captions'] = len(optimized_tracks) > 0
+            else:
+                # Step 4b: no native captions found -> local zero-cost ASR fallback.
+                # This can recover accessibility for videos with disabled/missing tracks.
+                log_warning("No native captions found; trying local ASR fallback")
+                try:
+                    asr_result = await run_in_threadpool(
+                        CaptionExtractor._extract_local_asr_sync,
+                        video_url
+                    )
+                    video_info['caption_tracks'] = asr_result.get('caption_tracks', [])[:max_tracks]
+                    video_info['has_captions'] = len(video_info['caption_tracks']) > 0
+                    video_info['source'] = 'Generated_Local_ASR'
+                    if video_info['has_captions']:
+                        log_success(
+                            f"Local ASR fallback produced {len(video_info['caption_tracks'])} track(s)"
+                        )
+                except Exception as asr_error:
+                    log_warning(f"Local ASR fallback unavailable: {asr_error}")
             
             # Step 5: Add metadata
             video_info['total_tracks_found'] = len(video_info['caption_tracks'])
             video_info['max_tracks_limit'] = max_tracks
             video_info['cached'] = False
-            video_info['source'] = 'Caption_Metadata'
+            if not video_info.get('source'):
+                video_info['source'] = 'Caption_Metadata'
             video_info['video_url'] = video_url
             
             # Step 6: Cache result
-            await CaptionExtractor._set_to_cache(cache_key, video_info)
+            # Avoid caching empty failures: they make debugging harder and block retries with long TTL.
+            if video_info.get("has_captions") and video_info.get("caption_tracks"):
+                await CaptionExtractor._set_to_cache(cache_key, video_info)
+            else:
+                log_warning("Skipping cache for empty extraction result (no caption tracks)")
             
             log_success(
                 f"Extracted {len(video_info['caption_tracks'])} caption tracks "
@@ -468,6 +622,84 @@ class CaptionExtractor:
             log_info(f"Limited tracks from {len(sorted_tracks)} to {max_tracks}")
         
         return limited_tracks
+
+    @staticmethod
+    def _find_downloaded_audio(tmp_dir: str) -> Optional[str]:
+        for filename in os.listdir(tmp_dir):
+            if not filename.startswith("audio."):
+                continue
+            full_path = os.path.join(tmp_dir, filename)
+            if os.path.isfile(full_path):
+                return full_path
+        return None
+
+    @staticmethod
+    def _find_generated_vtt(tmp_dir: str) -> Optional[str]:
+        for filename in os.listdir(tmp_dir):
+            if not filename.lower().endswith(".vtt"):
+                continue
+            full_path = os.path.join(tmp_dir, filename)
+            if os.path.isfile(full_path):
+                return full_path
+        return None
+
+    @staticmethod
+    def _parse_vtt_file(vtt_path: str) -> List[Dict]:
+        try:
+            with open(vtt_path, "r", encoding="utf-8") as file:
+                body = file.read()
+        except Exception:
+            return []
+
+        lines = body.splitlines()
+        cues: List[Dict] = []
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if "-->" not in line:
+                i += 1
+                continue
+
+            time_part = line
+            text_lines: List[str] = []
+            i += 1
+            while i < len(lines) and lines[i].strip():
+                text_lines.append(lines[i].strip())
+                i += 1
+
+            text = " ".join(text_lines).strip()
+            if not text:
+                continue
+
+            start_end = [part.strip() for part in time_part.split("-->")]
+            if len(start_end) != 2:
+                continue
+            start = CaptionExtractor._vtt_to_seconds(start_end[0])
+            end = CaptionExtractor._vtt_to_seconds(start_end[1].split(" ")[0])
+            if end <= start:
+                continue
+
+            cues.append(
+                {
+                    "start": round(start, 3),
+                    "end": round(end, 3),
+                    "text": text,
+                }
+            )
+
+        return cues
+
+    @staticmethod
+    def _vtt_to_seconds(value: str) -> float:
+        # Accept both HH:MM:SS.mmm and MM:SS.mmm
+        raw = str(value or "").strip().replace(",", ".")
+        match = re.match(r"^(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$", raw)
+        if not match:
+            return 0.0
+        hours = int(match.group(1) or 0)
+        minutes = int(match.group(2) or 0)
+        seconds = float(match.group(3) or 0.0)
+        return hours * 3600 + minutes * 60 + seconds
     
     @classmethod
     async def close_redis(cls):
