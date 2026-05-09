@@ -25,6 +25,10 @@ class CaptionExtractionRequest(BaseModel):
         None,
         description="URL of the page containing the video (for context)"
     )
+    preferred_languages: Optional[List[str]] = Field(
+        None,
+        description="Preferred caption languages (e.g. ['en', 'ur']). Backend will attempt translations."
+    )
 
 
 class CaptionTrack(BaseModel):

@@ -532,6 +532,7 @@ function logCaptionsDebug(event, detail) {
 async function extractCaptions(payload) {
   const videoUrl = normalizeUrl(payload.videoUrl);
   const pageUrl = normalizeUrl(payload.pageUrl);
+  const preferredLanguages = Array.isArray(payload.preferredLanguages) ? payload.preferredLanguages : [];
 
   if (!videoUrl) {
     return { ok: false, error: { message: "Invalid video URL" } };
@@ -558,6 +559,7 @@ async function extractCaptions(payload) {
     body: {
       video_url: videoUrl,
       page_url: pageUrl || undefined,
+      preferred_languages: preferredLanguages.length > 0 ? preferredLanguages : undefined,
     },
     parseJson: true,
     baseUrl,

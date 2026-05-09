@@ -187,7 +187,27 @@ class CaptionExtractor:
             return None
     
     @staticmethod
-    def _youtube_extraction_sync_NEW_API(video_url: str) -> Dict:
+    def _fetch_cues_from_transcript(transcript) -> List[Dict]:
+        """Fetch and normalize cue data from a Transcript object."""
+        cues = []
+        try:
+            fetched = transcript.fetch()
+            for snippet in fetched:
+                text = str(getattr(snippet, 'text', '') or '').strip()
+                start = float(getattr(snippet, 'start', 0) or 0)
+                duration = float(getattr(snippet, 'duration', 0) or 0)
+                if text and duration > 0:
+                    cues.append({
+                        'start': round(start, 3),
+                        'end': round(start + duration, 3),
+                        'text': text,
+                    })
+        except Exception as e:
+            log_warning(f"Could not fetch cues: {e}")
+        return cues
+
+    @staticmethod
+    def _youtube_extraction_sync_NEW_API(video_url: str, preferred_languages: Optional[List[str]] = None) -> Dict:
         """
         SYNCHRONOUS YouTube extraction using NEW youtube-transcript-api v1.2.0+ API
         
@@ -205,56 +225,121 @@ class CaptionExtractor:
             raise RuntimeError("Invalid YouTube URL: Could not extract video ID")
         
         try:
-            # Step 2: Create API instance and get transcript list
-            # ⚠️ NEW API: Must instantiate YouTubeTranscriptApi()
-            api = YouTubeTranscriptApi()
-            transcript_list = api.list(video_id)  # NEW METHOD NAME
+            # Step 2: Create API instance (with optional cookies for IP-blocked scenarios)
+            cookie_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "cookies.txt"
+            )
+            if os.path.exists(cookie_path):
+                api = YouTubeTranscriptApi(cookie_path=cookie_path)
+                log_info("Using cookies.txt for YouTube authentication")
+            else:
+                api = YouTubeTranscriptApi()
+            transcript_list = api.list(video_id)
             
-            # Step 3: Extract tracks with inline cue data
+            # Store transcript objects for reuse
+            all_transcripts = list(transcript_list)
+            
+            # Step 3: Smart extraction — prioritize user's preferred languages
+            # Strategy: fetch preferred language FIRST to minimize HTTP calls
+            # (YouTube rate-limits after 1-2 requests per IP)
             tracks = []
             seen_languages = set()
+            pref_langs = preferred_languages or ['en', 'ur']
             
-            for transcript in transcript_list:
+            # 3a: Check if any preferred language exists as native track
+            for target_lang in pref_langs:
+                for transcript in all_transcripts:
+                    if transcript.language_code == target_lang and target_lang not in seen_languages:
+                        cues = CaptionExtractor._fetch_cues_from_transcript(transcript)
+                        if cues:
+                            seen_languages.add(target_lang)
+                            tracks.append({
+                                'language': target_lang,
+                                'language_name': transcript.language,
+                                'format': 'vtt',
+                                'url': '',
+                                'auto_generated': transcript.is_generated,
+                                'cues': cues,
+                            })
+                            log_info(
+                                f"Found native caption: {transcript.language} ({target_lang}) "
+                                f"[{'Auto' if transcript.is_generated else 'Manual'}] "
+                                f"({len(cues)} cues)"
+                            )
+                        break
+            
+            # 3b: If preferred languages not available natively, try translation
+            translatable_source = None
+            for transcript in all_transcripts:
+                if getattr(transcript, 'is_translatable', False):
+                    translatable_source = transcript
+                    break
+            
+            if translatable_source:
+                available_targets = set()
+                for t in getattr(translatable_source, 'translation_languages', []):
+                    code = t.get('language_code', '') if isinstance(t, dict) else getattr(t, 'language_code', '')
+                    if code:
+                        available_targets.add(code)
+                
+                for target_lang in pref_langs:
+                    if target_lang in seen_languages:
+                        continue
+                    if target_lang not in available_targets:
+                        continue
+                    try:
+                        translated_transcript = translatable_source.translate(target_lang)
+                        cues = CaptionExtractor._fetch_cues_from_transcript(translated_transcript)
+                        if cues:
+                            seen_languages.add(target_lang)
+                            lang_name = target_lang.upper()
+                            if target_lang == 'en':
+                                lang_name = 'English'
+                            elif target_lang == 'ur':
+                                lang_name = 'Urdu'
+                            tracks.append({
+                                'language': target_lang,
+                                'language_name': f"{lang_name} (translated)",
+                                'format': 'vtt',
+                                'url': '',
+                                'auto_generated': True,
+                                'cues': cues,
+                                'translated_from': translatable_source.language_code,
+                            })
+                            log_info(
+                                f"Translated caption: {lang_name} ({target_lang}) "
+                                f"from {translatable_source.language_code} "
+                                f"({len(cues)} cues)"
+                            )
+                    except Exception as translate_err:
+                        log_warning(
+                            f"Translation {translatable_source.language_code}->{target_lang} "
+                            f"failed: {translate_err}"
+                        )
+            
+            # 3c: Also include original language track if not already present
+            # Only fetch cues if we don't have preferred tracks yet (minimize HTTP calls)
+            for transcript in all_transcripts:
                 if transcript.language_code in seen_languages:
                     continue
-                
                 seen_languages.add(transcript.language_code)
-                
-                vtt_url = f"https://www.youtube.com/api/timedtext?v={video_id}&lang={transcript.language_code}&fmt=vtt"
-                
-                # Fetch actual cue data so the extension doesn't need to
-                # hit the unsigned timedtext URL (which often fails).
                 cues = []
-                try:
-                    fetched = api.fetch(video_id, languages=[transcript.language_code])
-                    for snippet in fetched:
-                        text = str(getattr(snippet, 'text', '') or '').strip()
-                        start = float(getattr(snippet, 'start', 0) or 0)
-                        duration = float(getattr(snippet, 'duration', 0) or 0)
-                        if text and duration > 0:
-                            cues.append({
-                                'start': round(start, 3),
-                                'end': round(start + duration, 3),
-                                'text': text,
-                            })
-                except Exception as cue_err:
-                    log_warning(f"Could not fetch cue data for {transcript.language_code}: {cue_err}")
-                
-                track = {
+                if not tracks:
+                    cues = CaptionExtractor._fetch_cues_from_transcript(transcript)
+                vtt_url = f"https://www.youtube.com/api/timedtext?v={video_id}&lang={transcript.language_code}&fmt=vtt"
+                tracks.append({
                     'language': transcript.language_code,
                     'language_name': transcript.language,
                     'format': 'vtt',
                     'url': vtt_url,
                     'auto_generated': transcript.is_generated,
                     'cues': cues,
-                }
-                
-                tracks.append(track)
-                
+                })
                 log_info(
                     f"Found caption: {transcript.language} ({transcript.language_code}) "
                     f"[{'Auto' if transcript.is_generated else 'Manual'}] "
-                    f"({len(cues)} cues fetched)"
+                    f"({len(cues)} cues{'- metadata only' if not cues else ''})"
                 )
             
             if not tracks:
@@ -293,6 +378,23 @@ class CaptionExtractor:
             raise RuntimeError(f"YouTube transcript extraction failed: {str(e)}")
 
     @staticmethod
+    def _find_tool(name: str) -> Optional[str]:
+        """Find a CLI tool in PATH or in the venv's Scripts directory."""
+        found = shutil.which(name)
+        if found:
+            return found
+        # Fallback: check venv Scripts directory (Windows venv often not in PATH)
+        import sys
+        venv_scripts = os.path.dirname(sys.executable)
+        candidate = os.path.join(venv_scripts, f"{name}.exe")
+        if os.path.isfile(candidate):
+            return candidate
+        candidate = os.path.join(venv_scripts, name)
+        if os.path.isfile(candidate):
+            return candidate
+        return None
+
+    @staticmethod
     def _extract_local_asr_sync(video_url: str) -> Dict:
         """
         Fallback path for videos without native captions:
@@ -301,8 +403,8 @@ class CaptionExtractor:
         """
         log_info(f"Attempting local ASR fallback for: {video_url}")
 
-        ytdlp_bin = shutil.which("yt-dlp")
-        whisper_bin = shutil.which("whisper")
+        ytdlp_bin = CaptionExtractor._find_tool("yt-dlp")
+        whisper_bin = CaptionExtractor._find_tool("whisper")
         if not ytdlp_bin:
             raise RuntimeError(
                 "Local ASR fallback unavailable: yt-dlp is not installed (pip install yt-dlp)"
@@ -444,7 +546,11 @@ class CaptionExtractor:
             raise RuntimeError("Invalid JSON response from yt-dlp")
     
     @staticmethod
-    async def extract_captions(video_url: str, max_tracks: int = MAX_TRACKS) -> Dict:
+    async def extract_captions(
+        video_url: str,
+        max_tracks: int = MAX_TRACKS,
+        preferred_languages: Optional[List[str]] = None
+    ) -> Dict:
         """
         MAIN ENTRY POINT: Extract captions with smart dispatch and caching
         
@@ -462,6 +568,7 @@ class CaptionExtractor:
         
         # Step 2: Detect platform
         platform = CaptionExtractor.detect_platform(video_url)
+        pref_langs = preferred_languages or ['en', 'ur']
         
         try:
             # Step 3: Dispatch to appropriate extractor
@@ -469,7 +576,8 @@ class CaptionExtractor:
                 # Use NEW youtube-transcript-api v1.2.x API
                 video_info = await run_in_threadpool(
                     CaptionExtractor._youtube_extraction_sync_NEW_API,
-                    video_url
+                    video_url,
+                    pref_langs
                 )
             else:
                 # Use yt-dlp fallback
@@ -600,7 +708,7 @@ class CaptionExtractor:
         original_language: Optional[str],
         max_tracks: int
     ) -> List[Dict]:
-        """Optimize tracks: deduplicate, sort by priority, limit"""
+        """Optimize tracks: deduplicate, sort by user-preferred languages first"""
         if not tracks:
             return []
         
@@ -608,12 +716,10 @@ class CaptionExtractor:
             lang_code = track['language']
             is_auto = track['auto_generated']
             
-            if original_language and lang_code == original_language:
-                return (0, is_auto, lang_code)
-            
             priority_level = CaptionExtractor.PRIORITY_LANGUAGES.get(lang_code, 5)
+            is_original = 0 if (original_language and lang_code == original_language) else 1
             
-            return (priority_level, is_auto, lang_code)
+            return (priority_level, is_auto, is_original, lang_code)
         
         sorted_tracks = sorted(tracks, key=get_priority_score)
         limited_tracks = sorted_tracks[:max_tracks]

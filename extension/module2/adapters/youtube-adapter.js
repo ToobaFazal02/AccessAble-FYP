@@ -69,7 +69,8 @@
       const backendTracks = await discoverTracksFromBackend(
         context,
         options.signal,
-        options.debug
+        options.debug,
+        Array.isArray(options.preferredLanguages) ? options.preferredLanguages : []
       );
       if (backendTracks.length > 0) {
         debugLog(options.debug, "track_discovery", { player: 0, backend: backendTracks.length });
@@ -456,7 +457,7 @@
     }
   }
 
-  async function discoverTracksFromBackend(context, signal, debug) {
+  async function discoverTracksFromBackend(context, signal, debug, preferredLanguages) {
     const action =
       sharedContracts?.ACTIONS?.CAPTIONS_EXTRACT || "captions.extract";
     if (!action || !globalThis.chrome?.runtime?.sendMessage) {
@@ -483,6 +484,7 @@
         payload: {
           videoUrl: mediaUrl,
           pageUrl: context?.pageUrl || "",
+          preferredLanguages: Array.isArray(preferredLanguages) ? preferredLanguages : [],
         },
       });
 

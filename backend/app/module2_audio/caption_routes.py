@@ -119,7 +119,10 @@ async def extract_captions(
         
         # Extract captions using yt-dlp (via run_in_threadpool)
         log_info(f"[Module 2] Cache miss - Extracting captions...")
-        extraction_result = await CaptionExtractor.extract_captions(video_url)
+        preferred_langs = request.preferred_languages or ['en', 'ur']
+        extraction_result = await CaptionExtractor.extract_captions(
+            video_url, preferred_languages=preferred_langs
+        )
         
         # Format response
         response = CaptionExtractionResponse(
